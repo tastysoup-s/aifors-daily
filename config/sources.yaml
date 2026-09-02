@@ -1,43 +1,53 @@
-# 默认信息源。用户在 fork 中可改这个文件来增删源。
+# AI4S-Daily 第一版信息源池。
+# 仅使用现有 arXiv / RSS / GitHub / Hacker News Fetcher；详细取舍见 docs/ai4s-sources.md。
 sources:
-  # ── 论文 / 学术 ──
-  - name: arxiv-cs-ai
+  # ── arXiv：总上限 50，与 baseline 单源上限持平 ──
+  # 当前 Fetcher 对 categories 使用 OR；科学领域论文仍需未来的 AI 相关性二次过滤。
+  - name: arxiv-ai-methods
     type: arxiv
-    categories: [cs.AI, cs.CL, cs.MA]
-    max_results: 50
+    categories: [cs.AI, cs.LG, stat.ML]
+    max_results: 20
 
-  - name: huggingface-blog
-    type: rss
-    url: https://huggingface.co/blog/feed.xml
+  - name: arxiv-biology-medicine
+    type: arxiv
+    categories: [q-bio.BM, q-bio.GN, q-bio.QM]
+    max_results: 10
 
-  # ── GitHub Topic 趋势 ──
-  - name: github-trending-agent
+  - name: arxiv-chemistry-materials
+    type: arxiv
+    categories: [physics.chem-ph, cond-mat.mtrl-sci]
+    max_results: 10
+
+  - name: arxiv-physics-earth
+    type: arxiv
+    categories: [physics.comp-ph, astro-ph.IM, physics.ao-ph, eess.IV]
+    max_results: 10
+
+  # ── GitHub：只启用已核验且数量可控的 AI4S Topics ──
+  - name: github-ai-for-science
     type: github
-    topic: agent
-    min_stars: 10
+    topic: ai-for-science
+    min_stars: 20
 
-  - name: github-trending-llm
+  - name: github-drug-discovery
     type: github
-    topic: llm
-    min_stars: 10
+    topic: drug-discovery
+    min_stars: 100
 
-  - name: github-trending-mcp
+  - name: github-protein-design
     type: github
-    topic: mcp
-    min_stars: 5
+    topic: protein-design
+    min_stars: 20
 
-  # ── 主要厂商 / 实验室 博客 ──
-  - name: openai-blog
-    type: rss
-    url: https://openai.com/blog/rss.xml
+  - name: github-materials-informatics
+    type: github
+    topic: materials-informatics
+    min_stars: 20
 
+  # ── 已有科研机构 / 平台 RSS：保留为研究新闻和项目补充 ──
   - name: deepmind-blog
     type: rss
     url: https://deepmind.google/blog/rss.xml
-
-  - name: google-research
-    type: rss
-    url: https://research.google/blog/rss/
 
   - name: nvidia-dev-blog
     type: rss
@@ -47,61 +57,8 @@ sources:
     type: rss
     url: https://www.microsoft.com/en-us/research/feed/
 
-  - name: together-ai-blog
-    type: rss
-    url: https://www.together.ai/blog/rss.xml
-
-  # 以下厂商 2026-05 验证暂无可用公开 RSS feed；如官方上线再添加：
-  # - Anthropic（substack 弃用、官网 /news/rss.xml /research/rss.xml /index.xml 全 404）
-  # - Mistral（/news/feed.xml /feed.xml /rss.xml 全 404）
-  # - Meta AI（ai.meta.com/blog/rss/ 等返回 400）
-  # - Cohere（/blog/rss.xml 200 但不是 feed）
-  # - xAI（/news/rss 403）
-  # - Stability AI（404）
-  # - DeepSeek（无公开 RSS）
-
-  # ── 框架方 ──
-  - name: langchain-blog
-    type: rss
-    url: https://blog.langchain.dev/rss.xml
-
-  # LlamaIndex 暂无可用公开 RSS（medium feed 死、官网各种 feed 路径 404）。
-  # - name: llamaindex-blog
-  #   type: rss
-  #   url: <TBD>
-
-  # ── 行业评论 / 专家个人博客 / 通讯 ──
-  - name: lilian-weng
-    type: rss
-    url: https://lilianweng.github.io/index.xml
-
-  - name: simon-willison
-    type: rss
-    url: https://simonwillison.net/atom/everything/
-
-  - name: sebastian-raschka
-    type: rss
-    url: https://magazine.sebastianraschka.com/feed
-
-  - name: andrej-karpathy
-    type: rss
-    url: https://karpathy.github.io/feed.xml
-
-  - name: import-ai
-    type: rss
-    url: https://importai.substack.com/feed
-
-  # ── 社区聚合 ──
-  - name: hackernews-ai
+  # ── 社区补充：高分门槛，避免通用 AI 新闻占据主池 ──
+  - name: hackernews-ai-science
     type: hackernews
-    query: "AI"
+    query: "AI science"
     min_points: 100
-
-  - name: qbitai
-    type: rss
-    url: https://www.qbitai.com/feed
-
-  # 机器之心暂无可用公开 RSS（/rss /feed 返回非 feed 页面）。
-  # - name: jiqizhixin
-  #   type: rss
-  #   url: <TBD>

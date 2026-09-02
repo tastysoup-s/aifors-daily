@@ -1,0 +1,100 @@
+# AI4S-Daily 第一版领域分类。当前仅作为设计配置，不接入现有 Pipeline。
+categories:
+  biology:
+    id: biology
+    name_en: Biology & Life Sciences
+    name_zh: 生物与生命科学
+    description: 面向生命系统、生物分子和组学研究中的人工智能方法与科研成果。
+    keywords:
+      - protein
+      - protein design
+      - protein structure
+      - genomics
+      - DNA
+      - RNA
+      - cell biology
+      - bioinformatics
+      - computational biology
+
+  medicine:
+    id: medicine
+    name_en: Medicine & Drug Discovery
+    name_zh: 医学与药物
+    description: 面向疾病研究、临床任务、医学成像和药物研发的人工智能工作。
+    keywords:
+      - drug discovery
+      - drug design
+      - biomedical AI
+      - medical AI
+      - clinical AI
+      - medical imaging
+      - therapeutics
+
+  chemistry:
+    id: chemistry
+    name_en: Chemistry
+    name_zh: 化学
+    description: 面向分子、反应与化学性质预测等问题的人工智能和计算方法。
+    keywords:
+      - molecular generation
+      - molecular property prediction
+      - reaction prediction
+      - retrosynthesis
+      - computational chemistry
+      - quantum chemistry
+
+  materials:
+    id: materials
+    name_en: Materials Science
+    name_zh: 材料科学
+    description: 面向材料发现、结构与性质预测以及材料设计的人工智能研究。
+    keywords:
+      - materials discovery
+      - crystal structure
+      - materials property prediction
+      - materials informatics
+      - battery materials
+      - catalyst materials
+
+  physics:
+    id: physics
+    name_en: Physics
+    name_zh: 物理科学
+    description: 面向物理建模、仿真、天文与粒子物理等领域的人工智能方法。
+    keywords:
+      - computational physics
+      - particle physics
+      - astronomy
+      - astrophysics
+      - simulation
+      - scientific machine learning for physics
+      - surrogate models
+
+  earth:
+    id: earth
+    name_en: Earth & Environmental Sciences
+    name_zh: 地球与环境科学
+    description: 面向气候、天气、遥感、海洋、大气与环境问题的人工智能研究。
+    keywords:
+      - climate
+      - weather
+      - earth science
+      - remote sensing
+      - ocean
+      - atmospheric science
+      - environmental science
+
+  general:
+    id: general
+    name_en: General AI for Science
+    name_zh: 通用 AI4S
+    description: 跨学科的科学智能基础模型、智能体、自动化发现与通用科学推理。
+    keywords:
+      - AI for Science
+      - scientific discovery
+      - scientific machine learning
+      - scientific foundation model
+      - scientific agent
+      - autonomous scientist
+      - AI scientist
+      - general scientific reasoning
