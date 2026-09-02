@@ -26,4 +26,3 @@ score_threshold: 7
 
 # 推送 top N（Stage 3 用）。
 top_n: 10
-
