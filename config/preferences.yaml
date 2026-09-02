@@ -12,14 +12,14 @@ keywords:
 # 7 天窗口配合 SQLite URL 去重，多抓的部分不会进新数据。
 fetch_window_hours: 168
 
-# LLM 选型。默认平衡预设（spec 第 6.3 节）。
+# LLM 选型。本 fork 统一使用 DeepSeek 省钱预设。
 # 其他预设见 README:
 #   省钱党:   scorer=deepseek/deepseek-chat  summarizer=deepseek/deepseek-chat
 #   品质党:   scorer=anthropic/claude-sonnet-4-6 summarizer=anthropic/claude-opus-4-7
 #   中文混搭: scorer=deepseek/deepseek-chat  summarizer=anthropic/claude-sonnet-4-6
 models:
-  scorer:     openai/gpt-4o-mini   # 评分阶段：每天跑 70+ 次，用便宜模型
-  summarizer: openai/gpt-5.2        # 总结阶段：每天跑 10 次，用强模型保证质量
+  scorer:     deepseek/deepseek-chat
+  summarizer: deepseek/deepseek-chat
 
 # 评分阈值：score >= score_threshold 的内容才进入总结阶段。
 score_threshold: 7

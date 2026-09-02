@@ -10,6 +10,17 @@ AI Daily 是一个自托管的每日 AI / Agent 资讯聚合工具。它每天�
 
 LLM 部分通过 [LiteLLM](https://github.com/BerriAI/litellm) 接入，所以你可以随时切换 Anthropic、OpenAI、DeepSeek、Gemini、Groq、Moonshot 等任意一家——只要在 Secrets 里配好对应 key，再把 `preferences.yaml` 里的模型字符串改掉就行，代码不用动。
 
+## 本仓库部署说明
+
+本 fork 位于 `tastysoup-s/aifors-daily`，保持上游 ai-daily 的原始 AI / Agent 聚合逻辑。评分和总结统一使用 `deepseek/deepseek-chat`，运行前只需配置 `DEEPSEEK_API_KEY`，不要把真实 key 写入代码、配置文件或提交历史。
+
+- 本地：复制 `.env.example` 为 `.env`，只在 `.env` 中填写 `DEEPSEEK_API_KEY`；依次运行 `python -m src.main fetch`、`python -m src.main summarize`、`python -m src.main render --output-dir site`。
+- GitHub Actions：在仓库 `Settings` → `Secrets and variables` → `Actions` 中添加名为 `DEEPSEEK_API_KEY` 的 Repository secret，然后从 Actions 页面手动运行 `daily`。工作流也会按原有 cron 自动运行。
+- 数据分支：首次成功运行会创建 `data` 分支，并把 SQLite 数据库保存为 `data/ai_daily.db`、静态页面保存为 `docs/index.html`。
+- GitHub Pages：在 `Settings` → `Pages` 中选择 `Deploy from a branch`，分支选 `data`，目录选 `/docs`。站点地址为 <https://tastysoup-s.github.io/aifors-daily/>。
+
+`.env`、SQLite 数据库和本地渲染目录已被 `.gitignore` 排除；提交前仍应运行 `git status`，确认没有密钥或临时数据进入版本库。
+
 ## 快速开始（GitHub-only，无需本地 Python）
 
 最推荐的上手路径完全不用动本地环境，全程在 GitHub 网页上操作。
@@ -23,7 +34,7 @@ LLM 部分通过 [LiteLLM](https://github.com/BerriAI/litellm) 接入，所以�
    - 这些 Secret 只存活在你自己 fork 的设置里，**对所有其他人（包括上游仓库）都不可见**。上游和其他 forker 用各自的 key，互不干扰。
 
 3. **编辑 `config/preferences.yaml`，让 `models` 字段对得上你刚加的 key**（GitHub 网页点铅笔图标在线改即可）：
-   - `models.scorer` / `models.summarizer`：换成你那家 provider 的模型字符串（格式 `<provider>/<model>`，见下文「模型预设」表）。**默认值是 Anthropic 的 Haiku + Sonnet**——如果你的 key 不是 Anthropic 的，这一步必须改，否则 workflow 第一步就会因为 `Missing ANTHROPIC_API_KEY` 退出。
+   - `models.scorer` / `models.summarizer`：换成你那家 provider 的模型字符串（格式 `<provider>/<model>`，见下文「模型预设」表）。本 fork 默认已配置为 DeepSeek；如果改用其他 provider，必须同步配置对应的 Secret。
    - `keywords`：换成你关心的方向。LLM 评分会把这些当主要风向标。
    - `score_threshold` / `top_n`：评分门槛和每日最多总结条数。默认 `7` / `10`，先按默认跑一两次再调。
    - 改完 Commit changes 到 main。
@@ -44,8 +55,8 @@ LLM 部分通过 [LiteLLM](https://github.com/BerriAI/litellm) 接入，所以�
 
 | 预设 | scorer | summarizer | 需要的 Secret | 月成本（约） |
 | --- | --- | --- | --- | --- |
-| 省钱党 | `deepseek/deepseek-chat` | `deepseek/deepseek-chat` | `DEEPSEEK_API_KEY` | < $1 |
-| 平衡党（默认） | `anthropic/claude-haiku-4-5` | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | $3 - $5 |
+| 省钱党（本 fork 默认） | `deepseek/deepseek-chat` | `deepseek/deepseek-chat` | `DEEPSEEK_API_KEY` | < $1 |
+| 平衡党 | `anthropic/claude-haiku-4-5` | `anthropic/claude-sonnet-4-6` | `ANTHROPIC_API_KEY` | $3 - $5 |
 | 品质党 | `anthropic/claude-sonnet-4-6` | `anthropic/claude-opus-4-7` | `ANTHROPIC_API_KEY` | $20 - $40 |
 | 中文混搭 | `deepseek/deepseek-chat` | `anthropic/claude-sonnet-4-6` | `DEEPSEEK_API_KEY` + `ANTHROPIC_API_KEY` | $2 - $4 |
 | OpenAI 入门 | `openai/gpt-4o-mini` | `openai/gpt-4o` | `OPENAI_API_KEY` | ~ $1 |
@@ -69,7 +80,7 @@ LiteLLM 支持的所有 provider 都能用，模型字符串格式都是 `<provi
 
 - **就想跑起来看看效果** → OpenAI 入门 或 省钱党。两套都能在一杯咖啡的钱里跑一整个月。
 - **想要中文摘要质量好** → 中文混搭 或 品质党。Claude Sonnet/Opus 对中文输出风格更稳定。
-- **关心性价比的稳态运行** → 平衡党（默认）。Haiku 评分够用，Sonnet 总结质量明显比 mini 系列高一档。
+- **关心性价比的稳态运行** → 平衡党。Haiku 评分够用，Sonnet 总结质量明显比 mini 系列高一档。
 - **完全自由组合** → 任意 `<provider>/<model>` 字符串都能用。只要 LiteLLM 认得、对应 env var 也配了 key，就能跑。
 
 ## 在 fork 里改什么
@@ -163,7 +174,7 @@ python -m src.main render --output-dir site --within-days 30
 
 ```bash
 pytest
-# 当前 72/72 通过
+# 当前 82/82 通过
 ```
 
 ## 架构（简）
