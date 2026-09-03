@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from math import isfinite
 from typing import Literal
 
 
@@ -134,6 +135,27 @@ class AI4SSummary:
     resources: str
     model: str
     cost_usd: float
+
+    def __post_init__(self) -> None:
+        content_fields = (
+            "scientific_problem",
+            "ai_method",
+            "main_result",
+            "innovation",
+            "scientific_significance",
+            "resources",
+        )
+        if any(not isinstance(getattr(self, name), str) for name in content_fields):
+            raise ValueError("AI4SSummary content fields must be strings")
+        if not isinstance(self.model, str) or not self.model:
+            raise ValueError("AI4SSummary model must be a non-empty string")
+        if (
+            isinstance(self.cost_usd, bool)
+            or not isinstance(self.cost_usd, (int, float))
+            or not isfinite(self.cost_usd)
+            or self.cost_usd < 0
+        ):
+            raise ValueError("AI4SSummary cost_usd must be a finite non-negative number")
 
 
 @dataclass

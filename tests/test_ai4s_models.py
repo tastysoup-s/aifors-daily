@@ -130,6 +130,33 @@ def test_ai4s_summary_construction():
     assert summary.resources == "https://example.com/code"
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"scientific_problem": 123},
+        {"model": ""},
+        {"cost_usd": -0.1},
+        {"cost_usd": True},
+        {"cost_usd": float("nan")},
+    ],
+)
+def test_ai4s_summary_rejects_invalid_values(overrides):
+    values = {
+        "scientific_problem": "problem",
+        "ai_method": "method",
+        "main_result": "result",
+        "innovation": "innovation",
+        "scientific_significance": "significance",
+        "resources": "none",
+        "model": "test-model",
+        "cost_usd": 0.001,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValueError, match="AI4SSummary"):
+        AI4SSummary(**values)
+
+
 def test_ai4s_analysis_combines_item_analyzer_and_summary():
     analysis = AI4SAnalysis(
         item=_item(), analyzer=_analyzer_result(), summary=_summary()

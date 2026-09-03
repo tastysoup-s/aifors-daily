@@ -151,6 +151,63 @@ def test_save_and_load_ai4s_summary(tmp_path: Path):
     storage.close()
 
 
+def test_get_unsummarized_ai4s_analyses_filters_and_sorts(tmp_path: Path):
+    storage = Storage(tmp_path / "test.db")
+    storage.init()
+    storage.record_items([
+        _item("https://score-8"),
+        _item("https://score-9"),
+        _item("https://low"),
+        _item("https://non-ai4s"),
+        _item("https://done"),
+    ])
+    storage.save_analyzer_result("https://score-8", _result(score=8))
+    storage.save_analyzer_result("https://score-9", _result(score=9))
+    storage.save_analyzer_result("https://low", _result(score=5))
+    storage.save_analyzer_result(
+        "https://non-ai4s",
+        _result(
+            is_ai4s=False,
+            primary_category=None,
+            secondary_categories=[],
+            score=1,
+        ),
+    )
+    storage.save_analyzer_result("https://done", _result(score=10))
+    storage.save_ai4s_summary("https://done", _summary())
+
+    candidates = storage.get_unsummarized_ai4s_analyses(
+        min_score=7,
+    )
+
+    assert [analysis.item.url for analysis in candidates] == [
+        "https://score-9",
+        "https://score-8",
+    ]
+    assert all(analysis.summary is None for analysis in candidates)
+    storage.close()
+
+
+def test_ai4s_summary_state_is_controlled_by_summarized_at(tmp_path: Path):
+    storage = Storage(tmp_path / "test.db")
+    storage.init()
+    storage.record_items([_item("https://partial")])
+    storage.save_analyzer_result("https://partial", _result())
+    storage._conn_or_die().execute(
+        "UPDATE ai4s_analyses SET scientific_problem=? WHERE url=?",
+        ("partial write", "https://partial"),
+    )
+    storage._conn_or_die().commit()
+
+    analysis = storage.get_ai4s_analysis("https://partial")
+    candidates = storage.get_unsummarized_ai4s_analyses(7)
+
+    assert analysis is not None
+    assert analysis.summary is None
+    assert [candidate.item.url for candidate in candidates] == ["https://partial"]
+    storage.close()
+
+
 def test_save_ai4s_summary_requires_analyzer_result(tmp_path: Path):
     storage = Storage(tmp_path / "test.db")
     storage.init()

@@ -261,6 +261,28 @@ class Storage:
             )
         conn.commit()
 
+    def get_unsummarized_ai4s_analyses(
+        self,
+        min_score: int,
+    ) -> list[AI4SAnalysis]:
+        conn = self._conn_or_die()
+        rows = conn.execute(
+            "SELECT i.*,"
+            "       a.is_ai4s, a.primary_category,"
+            "       a.secondary_categories_json, a.content_type, a.score,"
+            "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
+            "       a.scientific_problem, a.ai_method, a.main_result,"
+            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.summarizer_model, a.summarizer_cost_usd,"
+            "       a.summarized_at, a.surfaced_at"
+            " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
+            " WHERE a.is_ai4s = 1 AND a.score >= ?"
+            "   AND a.summarized_at IS NULL"
+            " ORDER BY a.score DESC, i.published_at DESC",
+            (min_score,),
+        ).fetchall()
+        return [self._row_to_ai4s_analysis(row) for row in rows]
+
     def get_ai4s_analysis(self, url: str) -> AI4SAnalysis | None:
         conn = self._conn_or_die()
         row = conn.execute(
@@ -270,7 +292,8 @@ class Storage:
             "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
             "       a.scientific_problem, a.ai_method, a.main_result,"
             "       a.innovation, a.scientific_significance, a.resources,"
-            "       a.summarizer_model, a.summarizer_cost_usd, a.surfaced_at"
+            "       a.summarizer_model, a.summarizer_cost_usd,"
+            "       a.summarized_at, a.surfaced_at"
             " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
             " WHERE i.url = ?",
             (url,),
@@ -445,7 +468,7 @@ class Storage:
             cost_usd=row["analyzer_cost_usd"],
         )
         summary = None
-        if row["scientific_problem"] is not None:
+        if row["summarized_at"] is not None:
             summary = AI4SSummary(
                 scientific_problem=row["scientific_problem"],
                 ai_method=row["ai_method"],

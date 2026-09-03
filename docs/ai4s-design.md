@@ -1,6 +1,6 @@
 # AI4S-Daily 改造设计
 
-> 状态：Phase 4 数据库存储和 Phase 5 Analyzer Pipeline 已完成。AI4S Summary、日报、周报和前端仍未接入。
+> 状态：Phase 6 AI4S Summarizer 已完成，Fetch → Analyze → Summarize 核心后端链路已接通；日报、周报和前端尚未开始。
 
 ## 1. 项目目标
 
@@ -40,6 +40,8 @@ sources
 AI4S sources
 → Item
 → AnalyzerResult（Classification + AI4S Relevance + Scoring）
+→ threshold / Top N
+→ AI4SSummary
 → SQLite ai4s_analyses
 ```
 
@@ -210,7 +212,13 @@ cost_usd
 
 ## 9. AI4S Summarization
 
-未来摘要应围绕六个字段组织：
+AI4S Summarizer 位于 `src/ai4s_summarizer.py`，使用 `models.summarizer` 和正式 Prompt `prompts/summarize_ai4s.txt`。它只处理 `is_ai4s=true`、达到 `score_threshold`、且 `summarized_at IS NULL` 的分析结果，并按分数、发布时间排序。`top_n` 控制单批默认成本，CLI 的 `--limit` 可进一步收紧调用数量：
+
+```text
+python -m src.main summarize-ai4s --db data/ai4s_dev.db [--limit N]
+```
+
+摘要围绕六个字段组织：
 
 ```text
 scientific_problem
@@ -221,7 +229,7 @@ scientific_significance
 resources
 ```
 
-摘要必须区分科学问题与 AI 方法，优先提供定量结果，不得补写输入未披露的数据；缺少指标时明确写“未披露”。语言应通俗、准确、克制，避免营销腔。草稿位于 `prompts/summarize_ai4s_draft.txt`，本阶段不替换现有 Prompt 或修改 `src/summarizer.py`。
+摘要必须区分科学问题与 AI 方法、创新与科学意义，优先提供定量结果，不得补写输入未披露的数据或资源；缺少信息时明确写“原文未说明”或“未披露”。输出经过必要字段、字符串类型和推断性措辞校验，单条失败不会阻断批次，也不会写入 `summarized_at`。原版 `src/summarizer.py` 和 `prompts/summarize.txt` 保持不变。
 
 ## 10. Daily Report
 
@@ -260,7 +268,7 @@ Daily / Weekly switch
 
 ## 13. Database
 
-AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为外键和主键。Analyzer 的分类、类型、分数、标签、模型、成本与时间保存在该表；AI4SSummary 所需字段已预留但没有真实 LLM 写入流程。
+AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为外键和主键。Analyzer 的分类、类型、分数、标签、模型、成本与时间保存在该表；AI4SSummary 的六个字段、模型、成本和 `summarized_at` 更新在同一行中。`summarized_at` 是摘要完成状态的依据。
 
 `Storage.init()` 使用 `CREATE TABLE IF NOT EXISTS` 同时支持全新数据库和只有 `items`、`summaries` 的旧数据库。旧 Pipeline 继续使用 `summaries`，两套状态互不覆盖。
 
@@ -268,9 +276,9 @@ AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为
 
 - `main` 保持原版稳定 baseline；AI4S 开发只在 `feat/ai4s-redesign` 进行。
 - `data/ai_daily.db` 是原版与历史运行的 reference DB，后续 AI4S 实验不得使用、清空、迁移或覆盖它。
-- `data/ai4s_dev.db` 是后续 AI4S 开发数据库；当前可暂不存在，需要时由程序自行初始化，不复制历史数据。
-- CLI 已原生支持 `--db`。后续使用 `python -m src.main <fetch|summarize|render> --db data/ai4s_dev.db`，默认路径仍保持 `data/ai_daily.db`。
-- AI4S 开发阶段不得用旧版 Prompt 对新 AI4S Item 运行 `summarize`；涉及 schema migration 前必须先备份对应数据库。
+- `data/ai4s_dev.db` 是 AI4S 开发数据库，不复制历史数据。
+- AI4S 核心命令为 `fetch`、`analyze` 和 `summarize-ai4s`，三者都通过 `--db data/ai4s_dev.db` 显式使用开发库；默认路径仍保持 `data/ai_daily.db`。
+- AI4S 开发阶段不得用旧版 Prompt 对新 AI4S Item 运行原版 `summarize`；涉及 schema migration 前必须先备份对应数据库。
 
 ## 14. Development Roadmap
 
@@ -282,11 +290,11 @@ AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为
 | Phase 3 Model | 设计 AI4S 领域对象与边界 | 完成 |
 | Phase 4 DB | 设计并实现可迁移的 AI4S schema | 完成 |
 | Phase 5 Analyzer | 合并领域、内容类型、AI relevance 和 Scoring | 完成 |
-| Phase 6 Summary | 接入 AI4S 结构化摘要 | 下一阶段 |
-| Phase 7 Daily | 实现每日 Highlights 与分类报告 | 待开始 |
+| Phase 6 Summary | 接入 AI4S 结构化摘要 | 完成 |
+| Phase 7 Daily | 实现每日 Highlights 与分类报告 | 下一阶段 |
 | Phase 8 Weekly | 实现每周两次的聚合和趋势分析 | 待开始 |
 | Phase 9 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
 | Phase 10 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
 | Phase 11 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
 
-下一阶段只应接入 **AI4SSummary**，不应提前实现 Daily、Weekly、Frontend 或 Workflow。
+Phase 6 完成后，核心 AI4S backend processing 已形成。下一阶段只应设计 **Daily Report**，Weekly、Frontend 和 Workflow 尚未开始。
