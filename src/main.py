@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.ai4s_analyzer import run_ai4s_analyze
 from src.config import load_config
 from src.dedup import dedup_by_url
 from src.fetchers import fetch_all
@@ -56,6 +57,21 @@ async def run_summarize_cmd(
         storage.close()
 
 
+async def run_analyze_cmd(
+    sources_path: Path = Path("config/sources.yaml"),
+    preferences_path: Path = Path("config/preferences.yaml"),
+    db_path: Path = Path("data/ai_daily.db"),
+    limit: int | None = None,
+) -> dict[str, int | float]:
+    config = load_config(sources_path=sources_path, preferences_path=preferences_path)
+    storage = Storage(db_path)
+    storage.init()
+    try:
+        return await run_ai4s_analyze(storage, config, limit=limit)
+    finally:
+        storage.close()
+
+
 async def run_render_cmd(
     sources_path: Path = Path("config/sources.yaml"),
     preferences_path: Path = Path("config/preferences.yaml"),
@@ -84,6 +100,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     for name, help_ in (
         ("fetch", "Fetch all sources and store items"),
+        ("analyze", "Classify and score unanalyzed items for AI4S"),
         ("summarize", "Score unscored items and summarize the top-N"),
         ("render", "Render summarized items to site/index.html"),
     ):
@@ -91,11 +108,20 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         p.add_argument("--sources", default="config/sources.yaml")
         p.add_argument("--preferences", default="config/preferences.yaml")
         p.add_argument("--db", default="data/ai_daily.db")
+        if name == "analyze":
+            p.add_argument("--limit", type=_positive_int)
         if name == "render":
             p.add_argument("--output-dir", default="site")
             p.add_argument("--within-days", type=int, default=30)
 
     return parser.parse_args(argv)
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,6 +140,14 @@ def main(argv: list[str] | None = None) -> int:
             sources_path=Path(args.sources),
             preferences_path=Path(args.preferences),
             db_path=Path(args.db),
+        ))
+        return 0
+    if args.command == "analyze":
+        asyncio.run(run_analyze_cmd(
+            sources_path=Path(args.sources),
+            preferences_path=Path(args.preferences),
+            db_path=Path(args.db),
+            limit=args.limit,
         ))
         return 0
     if args.command == "render":

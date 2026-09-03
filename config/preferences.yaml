@@ -1,11 +1,17 @@
 # 用户偏好。在 fork 中改这个文件。
 keywords:
-  - LLM agent
-  - MCP
-  - tool use
-  - RAG
-  - multi-agent
-  - reasoning models
+  - AI for Science
+  - scientific machine learning
+  - protein design
+  - drug discovery
+  - computational biology
+  - molecular generation
+  - reaction prediction
+  - materials discovery
+  - scientific foundation model
+  - weather forecasting
+  - climate modeling
+  - scientific agent
 
 # 抓取窗口（小时）。默认抓最近 7 天的内容——
 # AI Lab 博客（OpenAI/DeepMind/HuggingFace）发布频率低，36h 窗口会系统性卡掉，

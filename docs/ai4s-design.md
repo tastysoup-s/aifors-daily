@@ -1,6 +1,6 @@
 # AI4S-Daily 改造设计
 
-> 状态：Phase 3 数据模型设计已完成。AI4S 模型尚未映射到数据库或接入 Pipeline；日报、周报和前端仍保持不变。
+> 状态：Phase 4 数据库存储和 Phase 5 Analyzer Pipeline 已完成。AI4S Summary、日报、周报和前端仍未接入。
 
 ## 1. 项目目标
 
@@ -32,9 +32,18 @@ sources
 
 这个 baseline 通过 `baseline-ai-daily` 标签保护。AI4S 改造必须分阶段进行，并保持每个阶段可回退、可测试。
 
-## 3. AI4S 目标架构
+## 3. AI4S 架构
 
-未来目标流程为：
+当前已经接通的流程为：
+
+```text
+AI4S sources
+→ Item
+→ AnalyzerResult（Classification + AI4S Relevance + Scoring）
+→ SQLite ai4s_analyses
+```
+
+后续目标流程为：
 
 ```text
 AI4S sources
@@ -155,14 +164,17 @@ Science Domain Candidate
 
 在第一版运行数据可用于评估后，再独立设计 bioRxiv、PubMed、OpenAlex 等 Fetcher。新增来源必须同时评估授权、接口稳定性、去重键、时间字段、内容完整度和每日调用成本，不能只追求召回率。
 
-## 7. Analyzer 接入设计
+## 7. Analyzer Pipeline
 
-Analyzer 的 Pipeline 接入属于后续阶段，本次只定义输出模型。建议输入保持最小且可审计：
+Analyzer 位于 `src/ai4s_analyzer.py`，通过一次 `complete_json()` 调用合并 Classification、AI4S relevance 和 Scoring，并复用 `models.scorer`。输入保持最小且可审计：
 
 ```text
+AI4S taxonomy
+用户关注关键词
+source
+published date
 title
 content
-source
 ```
 
 结构化输出使用 `AnalyzerResult`：
@@ -182,7 +194,7 @@ cost_usd
 - `content_type` 使用第 5 节定义的内容类型。
 - `score` 是 AI4S 相关性、科学价值、技术创新、证据质量和科研影响的最终排序分数。
 
-第一版不保存未经校准、容易造成误解的自报 `confidence`；如后续有校准数据，再作为独立设计加入。Analyzer 必须显式判断 AI relevance，避免把纯科学论文或普通 AI 新闻送入深度摘要。失败回退、模型版本和数据库 migration 在后续阶段实现。
+正式 Prompt 位于 `prompts/analyze_ai4s.txt`，正文截断为 1200 字符。命令 `python -m src.main analyze --db data/ai4s_dev.db [--limit N]` 只读取未分析 Item；成功和非 AI4S 结果都会持久化，失败项保留为未分析以便下次重试。第一版不保存未经校准、容易造成误解的自报 `confidence`。
 
 ## 8. AI4S Scoring
 
@@ -246,11 +258,11 @@ Daily / Weekly switch
 
 仍优先保持静态、轻量和可部署。是否继续使用现有 Jinja2 模板应在数据模型稳定后评估；本阶段不改布局、不引入 React/Vue，也不修改任何模板。
 
-## 13. Database Future Work
+## 13. Database
 
-本阶段没有修改 SQLite schema、`src/storage.py` 或 `src/models.py`。
+AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为外键和主键。Analyzer 的分类、类型、分数、标签、模型、成本与时间保存在该表；AI4SSummary 所需字段已预留但没有真实 LLM 写入流程。
 
-后续需要单独设计 migration，至少考虑分类结果、内容类型、置信度、AI relevance、日报/周报归属、Prompt/模型版本和历史重跑。设计时必须明确旧数据库升级、幂等写入、回滚和 baseline 数据兼容策略。
+`Storage.init()` 使用 `CREATE TABLE IF NOT EXISTS` 同时支持全新数据库和只有 `items`、`summaries` 的旧数据库。旧 Pipeline 继续使用 `summaries`，两套状态互不覆盖。
 
 ## Development Environment / State Isolation
 
@@ -268,14 +280,13 @@ Daily / Weekly switch
 | Phase 1 Domain | 固化 7 类领域、内容类型和总体设计 | 本阶段完成 |
 | Phase 2 Sources | 运行第一版 Source Pool，以真实数据校准数量与质量 | 完成首轮配置与验证 |
 | Phase 3 Model | 设计 AI4S 领域对象与边界 | 完成 |
-| Phase 4 DB | 设计并实现可迁移的 schema | 下一阶段 |
-| Phase 5 Classification | 实现领域、内容类型、置信度和 AI relevance 分类 | 待开始 |
-| Phase 6 Scorer | 接入并校准 AI4S Scorer | 待开始 |
-| Phase 7 Summarizer | 接入 AI4S 结构化摘要 | 待开始 |
-| Phase 8 Daily | 实现每日 Highlights 与分类报告 | 待开始 |
-| Phase 9 Weekly | 实现每周两次的聚合和趋势分析 | 待开始 |
-| Phase 10 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
-| Phase 11 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
-| Phase 12 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
+| Phase 4 DB | 设计并实现可迁移的 AI4S schema | 完成 |
+| Phase 5 Analyzer | 合并领域、内容类型、AI relevance 和 Scoring | 完成 |
+| Phase 6 Summary | 接入 AI4S 结构化摘要 | 下一阶段 |
+| Phase 7 Daily | 实现每日 Highlights 与分类报告 | 待开始 |
+| Phase 8 Weekly | 实现每周两次的聚合和趋势分析 | 待开始 |
+| Phase 9 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
+| Phase 10 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
+| Phase 11 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
 
-下一阶段只应进行 **AI4S data model + Classification schema design**，不应跳过模型和 migration 设计直接实现分类器。
+下一阶段只应接入 **AI4SSummary**，不应提前实现 Daily、Weekly、Frontend 或 Workflow。
