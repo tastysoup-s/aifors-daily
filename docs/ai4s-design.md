@@ -198,6 +198,14 @@ Daily / Weekly switch
 
 后续需要单独设计 migration，至少考虑分类结果、内容类型、置信度、AI relevance、日报/周报归属、Prompt/模型版本和历史重跑。设计时必须明确旧数据库升级、幂等写入、回滚和 baseline 数据兼容策略。
 
+## Development Environment / State Isolation
+
+- `main` 保持原版稳定 baseline；AI4S 开发只在 `feat/ai4s-redesign` 进行。
+- `data/ai_daily.db` 是原版与历史运行的 reference DB，后续 AI4S 实验不得使用、清空、迁移或覆盖它。
+- `data/ai4s_dev.db` 是后续 AI4S 开发数据库；当前可暂不存在，需要时由程序自行初始化，不复制历史数据。
+- CLI 已原生支持 `--db`。后续使用 `python -m src.main <fetch|summarize|render> --db data/ai4s_dev.db`，默认路径仍保持 `data/ai_daily.db`。
+- AI4S 开发阶段不得用旧版 Prompt 对新 AI4S Item 运行 `summarize`；涉及 schema migration 前必须先备份对应数据库。
+
 ## 14. Development Roadmap
 
 | Phase | 目标 | 当前状态 |
