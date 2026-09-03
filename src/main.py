@@ -15,6 +15,7 @@ from src.config import load_config
 from src.dedup import dedup_by_url
 from src.fetchers import fetch_all
 from src.logging_setup import setup_logging
+from src.notifier.ai4s_web import render_ai4s_site
 from src.notifier.web import render_site
 from src.storage import Storage
 from src.summarizer import run_summarize
@@ -148,6 +149,18 @@ async def run_render_cmd(
         storage.close()
 
 
+def run_render_ai4s_cmd(
+    db_path: Path = Path("data/ai_daily.db"),
+    output_dir: Path = Path("site"),
+) -> dict[str, object]:
+    storage = Storage(db_path)
+    storage.init()
+    try:
+        return render_ai4s_site(storage, output_dir=output_dir)
+    finally:
+        storage.close()
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="ai-daily")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -159,6 +172,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ("summarize-ai4s", "Summarize high-scoring AI4S analyses"),
         ("generate-daily", "Generate a persisted AI4S daily report"),
         ("generate-weekly", "Generate a persisted AI4S weekly report"),
+        ("render-ai4s", "Render persisted AI4S reports to site/index.html"),
         ("render", "Render summarized items to site/index.html"),
     ):
         p = sub.add_parser(name, help=help_)
@@ -170,8 +184,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         if name in ("generate-daily", "generate-weekly"):
             date_type = _weekly_date if name == "generate-weekly" else _iso_date
             p.add_argument("--report-date", type=date_type)
-        if name == "render":
+        if name in ("render", "render-ai4s"):
             p.add_argument("--output-dir", default="site")
+        if name == "render":
             p.add_argument("--within-days", type=int, default=30)
 
     return parser.parse_args(argv)
@@ -260,6 +275,16 @@ def main(argv: list[str] | None = None) -> int:
             f"categories={','.join(result['categories'])} "
             f"report_id={result['report_id']} created={str(result['created']).lower()} "
             f"llm_calls={result['llm_calls']} cost=${result['cost_usd']:.6f}"
+        )
+        return 0
+    if args.command == "render-ai4s":
+        result = run_render_ai4s_cmd(
+            db_path=Path(args.db),
+            output_dir=Path(args.output_dir),
+        )
+        print(
+            f"daily_items={result['daily_items']} weekly_items={result['weekly_items']} "
+            f"output={result['output']}"
         )
         return 0
     if args.command == "render":
