@@ -4,7 +4,15 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Iterable
 
-from src.models import Item, Score, Summary, Analysis
+from src.models import (
+    AI4SAnalysis,
+    AI4SSummary,
+    Analysis,
+    AnalyzerResult,
+    Item,
+    Score,
+    Summary,
+)
 
 
 _SCHEMA = """
@@ -39,6 +47,29 @@ CREATE TABLE IF NOT EXISTS summaries (
 CREATE INDEX IF NOT EXISTS idx_summaries_score ON summaries(score);
 -- idx_summaries_surfaced_at is created by _migrate_add_surfaced_at after the
 -- column is guaranteed to exist on both fresh and pre-feature DBs.
+
+CREATE TABLE IF NOT EXISTS ai4s_analyses (
+    url TEXT PRIMARY KEY REFERENCES items(url),
+    is_ai4s INTEGER NOT NULL CHECK(is_ai4s IN (0, 1)),
+    primary_category TEXT,
+    secondary_categories_json TEXT NOT NULL DEFAULT '[]',
+    content_type TEXT NOT NULL,
+    score INTEGER NOT NULL CHECK(score BETWEEN 0 AND 10),
+    tags_json TEXT NOT NULL,
+    analyzer_model TEXT NOT NULL,
+    analyzer_cost_usd REAL NOT NULL DEFAULT 0,
+    analyzed_at TEXT NOT NULL,
+    scientific_problem TEXT,
+    ai_method TEXT,
+    main_result TEXT,
+    innovation TEXT,
+    scientific_significance TEXT,
+    resources TEXT,
+    summarizer_model TEXT,
+    summarizer_cost_usd REAL,
+    summarized_at TEXT,
+    surfaced_at TEXT
+);
 """
 
 
@@ -154,6 +185,97 @@ class Storage:
             (cutoff,),
         ).fetchall()
         return [self._row_to_item(r) for r in rows]
+
+    # --- AI4S analyses (Phase 4+) ---
+
+    def get_unanalyzed_items(self, within_days: int) -> list[Item]:
+        conn = self._conn_or_die()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=within_days)).isoformat()
+        rows = conn.execute(
+            "SELECT i.* FROM items i"
+            " LEFT JOIN ai4s_analyses a ON a.url = i.url"
+            " WHERE a.url IS NULL AND i.first_seen >= ?"
+            " ORDER BY i.first_seen DESC",
+            (cutoff,),
+        ).fetchall()
+        return [self._row_to_item(r) for r in rows]
+
+    def save_analyzer_result(self, url: str, result: AnalyzerResult) -> None:
+        conn = self._conn_or_die()
+        conn.execute(
+            "INSERT INTO ai4s_analyses"
+            " (url, is_ai4s, primary_category, secondary_categories_json,"
+            "  content_type, score, tags_json, analyzer_model,"
+            "  analyzer_cost_usd, analyzed_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(url) DO UPDATE SET"
+            "   is_ai4s=excluded.is_ai4s,"
+            "   primary_category=excluded.primary_category,"
+            "   secondary_categories_json=excluded.secondary_categories_json,"
+            "   content_type=excluded.content_type,"
+            "   score=excluded.score,"
+            "   tags_json=excluded.tags_json,"
+            "   analyzer_model=excluded.analyzer_model,"
+            "   analyzer_cost_usd=excluded.analyzer_cost_usd,"
+            "   analyzed_at=excluded.analyzed_at",
+            (
+                url,
+                int(result.is_ai4s),
+                result.primary_category,
+                json.dumps(result.secondary_categories, ensure_ascii=False),
+                result.content_type,
+                result.score,
+                json.dumps(result.tags, ensure_ascii=False),
+                result.model,
+                result.cost_usd,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+
+    def save_ai4s_summary(self, url: str, summary: AI4SSummary) -> None:
+        conn = self._conn_or_die()
+        cur = conn.execute(
+            "UPDATE ai4s_analyses SET"
+            "  scientific_problem=?, ai_method=?, main_result=?, innovation=?,"
+            "  scientific_significance=?, resources=?, summarizer_model=?,"
+            "  summarizer_cost_usd=?, summarized_at=?"
+            " WHERE url=?",
+            (
+                summary.scientific_problem,
+                summary.ai_method,
+                summary.main_result,
+                summary.innovation,
+                summary.scientific_significance,
+                summary.resources,
+                summary.model,
+                summary.cost_usd,
+                datetime.now(timezone.utc).isoformat(),
+                url,
+            ),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(
+                f"save_ai4s_summary: no analyzer row exists for {url};"
+                " call save_analyzer_result first"
+            )
+        conn.commit()
+
+    def get_ai4s_analysis(self, url: str) -> AI4SAnalysis | None:
+        conn = self._conn_or_die()
+        row = conn.execute(
+            "SELECT i.*,"
+            "       a.is_ai4s, a.primary_category,"
+            "       a.secondary_categories_json, a.content_type, a.score,"
+            "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
+            "       a.scientific_problem, a.ai_method, a.main_result,"
+            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.summarizer_model, a.summarizer_cost_usd, a.surfaced_at"
+            " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
+            " WHERE i.url = ?",
+            (url,),
+        ).fetchone()
+        return self._row_to_ai4s_analysis(row) if row else None
 
     # --- summaries (Stage 2) ---
 
@@ -306,6 +428,41 @@ class Storage:
             content=row["content"],
             published_at=datetime.fromisoformat(row["published_at"]),
             score=score,
+            summary=summary,
+            surfaced_at=surfaced_at,
+        )
+
+    @staticmethod
+    def _row_to_ai4s_analysis(row: sqlite3.Row) -> AI4SAnalysis:
+        analyzer = AnalyzerResult(
+            is_ai4s=bool(row["is_ai4s"]),
+            primary_category=row["primary_category"],
+            secondary_categories=json.loads(row["secondary_categories_json"]),
+            content_type=row["content_type"],
+            score=row["score"],
+            tags=json.loads(row["tags_json"]),
+            model=row["analyzer_model"],
+            cost_usd=row["analyzer_cost_usd"],
+        )
+        summary = None
+        if row["scientific_problem"] is not None:
+            summary = AI4SSummary(
+                scientific_problem=row["scientific_problem"],
+                ai_method=row["ai_method"],
+                main_result=row["main_result"],
+                innovation=row["innovation"],
+                scientific_significance=row["scientific_significance"],
+                resources=row["resources"],
+                model=row["summarizer_model"] or "",
+                cost_usd=row["summarizer_cost_usd"] or 0.0,
+            )
+        surfaced_at = (
+            datetime.fromisoformat(row["surfaced_at"])
+            if row["surfaced_at"] else None
+        )
+        return AI4SAnalysis(
+            item=Storage._row_to_item(row),
+            analyzer=analyzer,
             summary=summary,
             surfaced_at=surfaced_at,
         )
