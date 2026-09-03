@@ -280,6 +280,12 @@ AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为
 - AI4S 核心命令为 `fetch`、`analyze` 和 `summarize-ai4s`，三者都通过 `--db data/ai4s_dev.db` 显式使用开发库；默认路径仍保持 `data/ai_daily.db`。
 - AI4S 开发阶段不得用旧版 Prompt 对新 AI4S Item 运行原版 `summarize`；涉及 schema migration 前必须先备份对应数据库。
 
+## Fetch Content Quality
+
+- RSS 优先使用响应中已有的 `entry.content`，并回退到 `summary`、`description`；保存前仅做基础 HTML 清理和重复开头去除。
+- GitHub 仅在 description 后补充响应中已有的 topics、language 和 homepage；topics 最多保留 8 个，避免 metadata 膨胀。
+- Known limitation：当前不会额外抓取 RSS 落地页、GitHub README、PDF 或其他全文。Hacker News 等只提供外链且没有正文的条目仍可能为空；如后续确有高价值候选需要补全，应另行设计严格限量的受控流程。
+
 ## 14. Development Roadmap
 
 | Phase | 目标 | 当前状态 |

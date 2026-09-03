@@ -56,11 +56,28 @@ async def fetch_github(source: dict[str, Any], window_hours: int) -> list[Item]:
             continue
         if int(repo.get("stargazers_count", 0)) < min_stars:
             continue
+        content_parts = []
+        description = (repo.get("description") or "").strip()
+        if description:
+            content_parts.append(description)
+        topics = [
+            str(topic).strip()
+            for topic in (repo.get("topics") or [])
+            if str(topic).strip()
+        ][:8]
+        if topics:
+            content_parts.append(f"Topics: {', '.join(dict.fromkeys(topics))}")
+        language = (repo.get("language") or "").strip()
+        if language:
+            content_parts.append(f"Language: {language}")
+        homepage = (repo.get("homepage") or "").strip()
+        if homepage:
+            content_parts.append(f"Homepage: {homepage}")
         items.append(
             Item(
                 url=repo["html_url"],
                 title=repo["full_name"],
-                content=(repo.get("description") or "").strip(),
+                content="\n\n".join(content_parts),
                 published_at=pushed_at,
                 source=f"github:{name}",
                 raw=repo,
