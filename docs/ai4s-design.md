@@ -264,14 +264,26 @@ python -m src.main generate-weekly --db data/ai4s_dev.db [--report-date YYYY-MM-
 
 ## 12. Frontend
 
-未来前端提供：
+AI4S 前端由 `src/notifier/ai4s_web.py` 和 `templates/ai4s_index.html.j2` 实现。渲染器只读取最新的 Daily / Weekly Report，不回退到旧 `summaries` 表，也不在展示层重新筛选 Item。
 
 ```text
 Daily / Weekly switch
 + Category navigation
 ```
 
-仍优先保持静态、轻量和可部署。是否继续使用现有 Jinja2 模板应在数据模型稳定后评估；本阶段不改布局、不引入 React/Vue，也不修改任何模板。
+页面提供 7 个 AI4S 领域与 All 过滤。Daily 卡片展示科学问题、AI 方法、主要结果、创新点、科研意义和资源六个字段，以及分数、领域、内容类型、标签、来源和日期；Weekly 展示总体趋势、实际出现的领域趋势、观察清单和代表工作。无报告、报告为空和过滤无结果都有明确状态。
+
+实现保持静态优先：单文件 UTF-8 HTML、原生 JavaScript 筛选、Jinja2 自动转义、无 React/Vue 或外部静态资源，并针对窄屏布局进行了浏览器验证。
+
+```text
+python -m src.main render-ai4s --db data/ai4s_dev.db --output-dir site
+```
+
+## Workflow and Publishing
+
+`.github/workflows/daily.yml` 每天 UTC 00:30 运行一次，顺序为 Fetch → Analyze → Summarize AI4S → Daily → 条件 Weekly → Render。Weekly 仅在 UTC 周三和周日生成。生产数据库固定为 `data/ai4s.db`，与 `data/ai4s_dev.db` 和历史 `data/ai_daily.db` 隔离。
+
+自动化从独立 `data` 分支恢复并回写 `data/ai4s.db`，同时发布 `docs/index.html`。唯一的 LLM Secret 是 `DEEPSEEK_API_KEY`；`GITHUB_TOKEN` 仅用于 Git 推送。GitHub Pages 应配置为 `Deploy from a branch` → `data` → `/docs`。定时工作流只有进入仓库默认分支后才会自动触发；功能分支阶段可手动验证，但不因此改写稳定 `main`。
 
 ## 13. Database
 
@@ -307,8 +319,10 @@ AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为
 | Phase 7 Validation | 真实验证 AI4S 后端处理质量 | 完成 |
 | Phase 8 Daily | 实现每日确定性报告 | 完成 |
 | Phase 9 Weekly | 实现每周两次的聚合和趋势分析 | 完成 |
-| Phase 10 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
-| Phase 11 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
-| Phase 12 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
+| Phase 10 IA | 固化 Report Layer 驱动的信息架构 | 完成 |
+| Phase 11 Frontend | 增加 Daily/Weekly 切换、分类导航和响应式页面 | 完成 |
+| Phase 12 Workflow | 自动化 AI4S Daily / Weekly 生产与数据持久化 | 完成 |
+| Phase 13 Pages | 准备 `data` 分支 `/docs` 发布结构 | 配置完成；仓库设置待手动启用 |
+| Phase 14 E2E/Docs | 完成端到端验证和运维文档 | 完成 |
 
-Phase 8/9 完成后，Report Layer 已可供前端直接读取。下一阶段只应开始 Frontend；Workflow 和 Pages 尚未开始。
+AI4S 从 Fetch 到静态发布的实现与本地验证已完成。线上 GitHub Pages 仍需要在仓库设置中手动选择 `data` 分支和 `/docs` 目录；该外部设置完成前不声明公网部署成功。
