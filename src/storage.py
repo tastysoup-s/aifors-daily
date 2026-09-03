@@ -10,6 +10,8 @@ from src.models import (
     Analysis,
     AnalyzerResult,
     Item,
+    Report,
+    ReportItem,
     Score,
     Summary,
 )
@@ -70,6 +72,32 @@ CREATE TABLE IF NOT EXISTS ai4s_analyses (
     summarized_at TEXT,
     surfaced_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_type TEXT NOT NULL CHECK(report_type IN ('daily', 'weekly')),
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    overview TEXT,
+    category_trends_json TEXT NOT NULL DEFAULT '{}',
+    watchlist_json TEXT NOT NULL DEFAULT '[]',
+    model TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    UNIQUE(report_type, period_start, period_end)
+);
+
+CREATE TABLE IF NOT EXISTS report_items (
+    report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    url TEXT NOT NULL REFERENCES items(url),
+    rank INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    section TEXT,
+    PRIMARY KEY(report_id, url),
+    UNIQUE(report_id, rank)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_latest
+    ON reports(report_type, generated_at DESC);
 """
 
 
@@ -300,6 +328,159 @@ class Storage:
         ).fetchone()
         return self._row_to_ai4s_analysis(row) if row else None
 
+    # --- reports (Phase 8+) ---
+
+    def get_report_candidates(
+        self,
+        period_start: datetime,
+        period_end: datetime,
+        min_score: int,
+        limit: int | None = None,
+    ) -> list[AI4SAnalysis]:
+        conn = self._conn_or_die()
+        query = (
+            "SELECT i.*,"
+            "       a.is_ai4s, a.primary_category,"
+            "       a.secondary_categories_json, a.content_type, a.score,"
+            "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
+            "       a.scientific_problem, a.ai_method, a.main_result,"
+            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.summarizer_model, a.summarizer_cost_usd,"
+            "       a.summarized_at, a.surfaced_at"
+            " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
+            " WHERE a.is_ai4s = 1 AND a.score >= ?"
+            "   AND a.summarized_at IS NOT NULL"
+            "   AND a.summarized_at >= ? AND a.summarized_at <= ?"
+            " ORDER BY a.score DESC, i.published_at DESC"
+        )
+        params: list = [
+            min_score,
+            period_start.isoformat(),
+            period_end.isoformat(),
+        ]
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [self._row_to_ai4s_analysis(row) for row in rows]
+
+    def create_report(
+        self,
+        report_type: str,
+        period_start: datetime,
+        period_end: datetime,
+        analyses: list[AI4SAnalysis],
+        *,
+        overview: str | None = None,
+        category_trends: dict[str, str] | None = None,
+        watchlist: list[str] | None = None,
+        model: str | None = None,
+        cost_usd: float = 0.0,
+    ) -> tuple[Report, bool]:
+        existing = self.get_report_by_period(report_type, period_start, period_end)
+        if existing is not None:
+            return existing, False
+
+        conn = self._conn_or_die()
+        generated_at = datetime.now(timezone.utc)
+        cur = conn.execute(
+            "INSERT INTO reports"
+            " (report_type, period_start, period_end, generated_at, overview,"
+            "  category_trends_json, watchlist_json, model, cost_usd)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                report_type,
+                period_start.isoformat(),
+                period_end.isoformat(),
+                generated_at.isoformat(),
+                overview,
+                json.dumps(category_trends or {}, ensure_ascii=False),
+                json.dumps(watchlist or [], ensure_ascii=False),
+                model,
+                cost_usd,
+            ),
+        )
+        report_id = int(cur.lastrowid)
+        conn.executemany(
+            "INSERT INTO report_items (report_id, url, rank, category)"
+            " VALUES (?, ?, ?, ?)",
+            [
+                (report_id, analysis.item.url, rank, analysis.analyzer.primary_category)
+                for rank, analysis in enumerate(analyses, start=1)
+            ],
+        )
+        conn.commit()
+        report = self.get_report_by_period(report_type, period_start, period_end)
+        assert report is not None
+        return report, True
+
+    def get_report_by_period(
+        self,
+        report_type: str,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> Report | None:
+        row = self._conn_or_die().execute(
+            "SELECT * FROM reports"
+            " WHERE report_type=? AND period_start=? AND period_end=?",
+            (report_type, period_start.isoformat(), period_end.isoformat()),
+        ).fetchone()
+        return self._row_to_report(row) if row else None
+
+    def get_daily_report(self, report_date) -> Report | None:
+        row = self._conn_or_die().execute(
+            "SELECT * FROM reports WHERE report_type='daily'"
+            " AND substr(period_start, 1, 10)=? ORDER BY generated_at DESC LIMIT 1",
+            (report_date.isoformat(),),
+        ).fetchone()
+        return self._row_to_report(row) if row else None
+
+    def get_weekly_report(
+        self, period_start: datetime, period_end: datetime
+    ) -> Report | None:
+        return self.get_report_by_period("weekly", period_start, period_end)
+
+    def get_latest_daily_report(self) -> Report | None:
+        return self._get_latest_report("daily")
+
+    def get_latest_weekly_report(self) -> Report | None:
+        return self._get_latest_report("weekly")
+
+    def _get_latest_report(self, report_type: str) -> Report | None:
+        row = self._conn_or_die().execute(
+            "SELECT * FROM reports WHERE report_type=?"
+            " ORDER BY period_end DESC LIMIT 1",
+            (report_type,),
+        ).fetchone()
+        return self._row_to_report(row) if row else None
+
+    def get_report_items(self, report_id: int) -> list[ReportItem]:
+        rows = self._conn_or_die().execute(
+            "SELECT i.*, a.is_ai4s, a.primary_category,"
+            "       a.secondary_categories_json, a.content_type, a.score,"
+            "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
+            "       a.scientific_problem, a.ai_method, a.main_result,"
+            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.summarizer_model, a.summarizer_cost_usd,"
+            "       a.summarized_at, a.surfaced_at,"
+            "       ri.rank report_rank, ri.category report_category,"
+            "       ri.section report_section"
+            " FROM report_items ri"
+            " JOIN items i ON i.url=ri.url"
+            " JOIN ai4s_analyses a ON a.url=i.url"
+            " WHERE ri.report_id=? ORDER BY ri.rank",
+            (report_id,),
+        ).fetchall()
+        return [
+            ReportItem(
+                analysis=self._row_to_ai4s_analysis(row),
+                rank=row["report_rank"],
+                category=row["report_category"],
+                section=row["report_section"],
+            )
+            for row in rows
+        ]
+
     # --- summaries (Stage 2) ---
 
     def save_score(self, url: str, score: Score) -> None:
@@ -488,4 +669,19 @@ class Storage:
             analyzer=analyzer,
             summary=summary,
             surfaced_at=surfaced_at,
+        )
+
+    def _row_to_report(self, row: sqlite3.Row) -> Report:
+        return Report(
+            id=row["id"],
+            report_type=row["report_type"],
+            period_start=datetime.fromisoformat(row["period_start"]),
+            period_end=datetime.fromisoformat(row["period_end"]),
+            generated_at=datetime.fromisoformat(row["generated_at"]),
+            items=self.get_report_items(row["id"]),
+            overview=row["overview"],
+            category_trends=json.loads(row["category_trends_json"]),
+            watchlist=json.loads(row["watchlist_json"]),
+            model=row["model"],
+            cost_usd=row["cost_usd"],
         )

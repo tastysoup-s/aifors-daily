@@ -22,6 +22,7 @@ AI4SContentType = Literal[
     "project",
     "research_news",
 ]
+ReportType = Literal["daily", "weekly"]
 
 AI4S_CATEGORY_IDS: frozenset[str] = frozenset(
     {"biology", "medicine", "chemistry", "materials", "physics", "earth", "general"}
@@ -170,3 +171,26 @@ class AI4SAnalysis:
     @property
     def total_cost_usd(self) -> float:
         return self.analyzer.cost_usd + (self.summary.cost_usd if self.summary else 0.0)
+
+
+@dataclass
+class ReportItem:
+    analysis: AI4SAnalysis
+    rank: int
+    category: AI4SCategory
+    section: str | None = None
+
+
+@dataclass
+class Report:
+    id: int
+    report_type: ReportType
+    period_start: datetime
+    period_end: datetime
+    generated_at: datetime
+    items: list[ReportItem]
+    overview: str | None = None
+    category_trends: dict[AI4SCategory, str] = field(default_factory=dict)
+    watchlist: list[str] = field(default_factory=list)
+    model: str | None = None
+    cost_usd: float = 0.0

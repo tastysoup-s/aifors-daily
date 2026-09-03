@@ -2,11 +2,13 @@ import argparse
 import asyncio
 import logging
 import sys
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from src.ai4s_analyzer import run_ai4s_analyze
+from src.ai4s_daily import generate_daily_report
 from src.ai4s_summarizer import run_ai4s_summarize
 from src.config import load_config
 from src.dedup import dedup_by_url
@@ -88,6 +90,23 @@ async def run_ai4s_summarize_cmd(
         storage.close()
 
 
+def run_generate_daily_cmd(
+    sources_path: Path = Path("config/sources.yaml"),
+    preferences_path: Path = Path("config/preferences.yaml"),
+    db_path: Path = Path("data/ai_daily.db"),
+    report_date: date | None = None,
+) -> dict[str, object]:
+    config = load_config(sources_path=sources_path, preferences_path=preferences_path)
+    storage = Storage(db_path)
+    storage.init()
+    try:
+        return generate_daily_report(
+            storage, config, report_date or datetime.now(timezone.utc).date()
+        )
+    finally:
+        storage.close()
+
+
 async def run_render_cmd(
     sources_path: Path = Path("config/sources.yaml"),
     preferences_path: Path = Path("config/preferences.yaml"),
@@ -119,6 +138,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ("analyze", "Classify and score unanalyzed items for AI4S"),
         ("summarize", "Score unscored items and summarize the top-N"),
         ("summarize-ai4s", "Summarize high-scoring AI4S analyses"),
+        ("generate-daily", "Generate a persisted AI4S daily report"),
         ("render", "Render summarized items to site/index.html"),
     ):
         p = sub.add_parser(name, help=help_)
@@ -127,6 +147,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         p.add_argument("--db", default="data/ai_daily.db")
         if name in ("analyze", "summarize-ai4s"):
             p.add_argument("--limit", type=_positive_int)
+        if name == "generate-daily":
+            p.add_argument("--report-date", type=_iso_date)
         if name == "render":
             p.add_argument("--output-dir", default="site")
             p.add_argument("--within-days", type=int, default=30)
@@ -139,6 +161,13 @@ def _positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
+
+
+def _iso_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be YYYY-MM-DD") from error
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -174,6 +203,19 @@ def main(argv: list[str] | None = None) -> int:
             db_path=Path(args.db),
             limit=args.limit,
         ))
+        return 0
+    if args.command == "generate-daily":
+        result = run_generate_daily_cmd(
+            sources_path=Path(args.sources),
+            preferences_path=Path(args.preferences),
+            db_path=Path(args.db),
+            report_date=args.report_date,
+        )
+        print(
+            f"period={result['period']} candidates={result['candidates']} "
+            f"selected={result['selected']} categories={','.join(result['categories'])} "
+            f"report_id={result['report_id']} created={str(result['created']).lower()}"
+        )
         return 0
     if args.command == "render":
         result = asyncio.run(run_render_cmd(
