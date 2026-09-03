@@ -1,6 +1,6 @@
 # AI4S-Daily 改造设计
 
-> 状态：Phase 1 设计基线。本文固化未来方向，但本阶段不接入新数据模型、不修改数据库、不实现分类器，也不改变日报、周报或前端。
+> 状态：Phase 3 数据模型设计已完成。AI4S 模型尚未映射到数据库或接入 Pipeline；日报、周报和前端仍保持不变。
 
 ## 1. 项目目标
 
@@ -39,15 +39,15 @@ sources
 ```text
 AI4S sources
 → Item
-→ Classification
-→ AI4S Scorer
-→ AI4S Summary
+→ AnalyzerResult（Classification + AI4S Relevance + Scoring）
+→ threshold
+→ AI4SSummary
 → Daily
 → Weekly
 → Frontend
 ```
 
-Classification 与 Scorer 承担不同职责：Classification 回答“属于哪个领域、是什么内容类型、置信度多高”；Scorer 回答“这项工作对 AI4S 读者有多大价值”。Summary 只对入选条目做事实约束下的结构化解释。
+Analyzer 在一次调用中回答“是否属于 AI4S、属于哪个领域、是什么内容类型、价值分数多高”，避免 Classification 与 Scorer 重复阅读同一输入。AI4SSummary 只对达到阈值的条目做事实约束下的结构化解释。
 
 ## 4. 领域分类体系
 
@@ -69,17 +69,66 @@ Classification 与 Scorer 承担不同职责：Classification 回答“属于哪
 
 内容类型是独立于领域的第二套维度：
 
-| 类型 | 含义 |
-| --- | --- |
-| `Paper` | 论文、预印本或明确的研究工作 |
-| `Model` | 可使用或公开说明的模型、权重与模型版本 |
-| `Dataset` | 科研数据集、数据库或数据资源 |
-| `Benchmark` | 评测任务、基准数据和评价框架 |
-| `Tool` | 面向科研的库、软件、服务或实验工具 |
-| `Project` | 综合研究项目、平台或长期计划 |
-| `Research News` | 实验室、机构或媒体发布的研究新闻 |
+| ID | 展示名称 | 含义 |
+| --- | --- | --- |
+| `paper` | Paper | 论文、预印本或明确的研究工作 |
+| `model` | Model | 可使用或公开说明的模型、权重与模型版本 |
+| `dataset` | Dataset | 科研数据集、数据库或数据资源 |
+| `benchmark` | Benchmark | 评测任务、基准数据和评价框架 |
+| `tool` | Tool | 面向科研的库、软件、服务或实验工具 |
+| `project` | Project | 综合研究项目、平台或长期计划 |
+| `research_news` | Research News | 实验室、机构或媒体发布的研究新闻 |
 
-例如，一项蛋白质结构模型的领域可以是 `biology`，内容类型可以是 `Model`；两者不能合并为一个枚举。本阶段只定义体系，不修改 `src/models.py`。
+例如，一项蛋白质结构模型的领域可以是 `biology`，内容类型可以是 `model`；前者回答科学领域，后者回答内容载体，两者不能合并为一个枚举。
+
+## AI4S Data Model
+
+Phase 3 采用新增兼容模型，不直接替换原版 `Score`、`Summary` 和 `Analysis`。这些旧模型仍服务当前 SQLite、Summarizer 和 Jinja2 Pipeline；新模型在 Phase 4/5 完成存储映射和调用接入。
+
+### Item
+
+`Item` 继续只表示 Fetcher 标准化后的原始内容：URL、标题、正文、发布日期、来源和原始载荷。领域、评分和摘要不放进 `Item`，因为它们是可重跑、与模型版本相关的派生结果；同一 Item 未来可能拥有不同 Analyzer 版本。
+
+### AnalyzerResult
+
+`AnalyzerResult` 合并 Classification、AI4S relevance 和最终排序分数：
+
+| 字段 | 类型 | 约束/语义 |
+| --- | --- | --- |
+| `is_ai4s` | `bool` | 是否真正属于 AI for Science |
+| `primary_category` | `AI4SCategory \| None` | AI4S 内容必须是 7 类之一；非 AI4S 必须为 `None` |
+| `secondary_categories` | `list[AI4SCategory]` | 最多 2 个、无重复、合法且不含主领域；非 AI4S 必须为空 |
+| `content_type` | `AI4SContentType` | `paper/model/dataset/benchmark/tool/project/research_news` |
+| `score` | `int` | 0–10，且拒绝 `bool` |
+| `tags` | `list[str]` | 方法或主题标签，不机械复制一级领域 |
+| `model` | `str` | Analyzer 使用的模型标识 |
+| `cost_usd` | `float` | Analyzer 调用成本 |
+
+`general` 是合法的跨学科 AI4S 主领域，不能同时表示“不是 AI4S”；因此 `is_ai4s=False` 时使用 `primary_category=None`。Python 目前用标准库 `Literal` 提供静态类型提示，并用常量集合执行运行时校验。`categories.yaml` 仍是 taxonomy 配置源，契约测试保证当前 Python ID 与 YAML 一致；Phase 4/5 应由配置加载后的 allowed categories 驱动运行时校验，避免长期维护两套定义。
+
+### AI4SSummary
+
+`AI4SSummary` 使用科研语义字段：`scientific_problem`、`ai_method`、`main_result`、`innovation`、`scientific_significance`、`resources`、`model`、`cost_usd`。它不永久携带旧 Summary 中语义重叠的 `approach/metrics/links/why_relevant`；旧模型暂时保留只是为了兼容现有 Pipeline。
+
+### AI4SAnalysis
+
+`AI4SAnalysis` 是未来展示与 Report 层消费的聚合对象：`Item + AnalyzerResult + optional AI4SSummary + surfaced_at`。Summary 允许为 `None`，表示已经分析但未达到摘要阈值或尚未摘要。网页和 Report 最终只消费该对象，不应理解数据库 Row 或原始 LLM JSON。
+
+```text
+Fetched
+  ↓
+Item
+  ↓
+Analyzed → AnalyzerResult
+  ├─ is_ai4s = false 或 score < threshold → 停止深度摘要
+  └─ is_ai4s = true 且 score >= threshold → AI4SSummary
+                                                ↓
+                AI4SAnalysis（Summary 可选） ←──┘
+```
+
+### Future Database Mapping and Reports
+
+Phase 4 才设计 `AnalyzerResult` 与 `AI4SSummary` 的 SQLite 表/字段、migration、版本和历史兼容；本阶段没有修改 schema 或 `storage.py`。Report 接口未来至少需要 `ReportType`、`period_start`、`period_end`、`generated_at` 和选中的 `AI4SAnalysis` 列表，但 Phase 8/9 前不新增 Report 类或生成器。
 
 ## 6. Source Strategy
 
@@ -106,9 +155,9 @@ Science Domain Candidate
 
 在第一版运行数据可用于评估后，再独立设计 bioRxiv、PubMed、OpenAlex 等 Fetcher。新增来源必须同时评估授权、接口稳定性、去重键、时间字段、内容完整度和每日调用成本，不能只追求召回率。
 
-## 7. Classification 未来设计
+## 7. Analyzer 接入设计
 
-Classification 是后续独立阶段，本次不实现。建议输入保持最小且可审计：
+Analyzer 的 Pipeline 接入属于后续阶段，本次只定义输出模型。建议输入保持最小且可审计：
 
 ```text
 title
@@ -116,19 +165,24 @@ content
 source
 ```
 
-未来结构化输出：
+结构化输出使用 `AnalyzerResult`：
 
 ```text
-category
+is_ai4s
+primary_category
+secondary_categories
 content_type
-confidence
+score
+tags
+model
+cost_usd
 ```
 
-- `category` 使用第 4 节固定的 7 个 ID。
+- `primary_category` 和 `secondary_categories` 使用第 4 节固定的 7 个 ID。
 - `content_type` 使用第 5 节定义的内容类型。
-- `confidence` 表示分类可信度，不等同于内容价值分数。
+- `score` 是 AI4S 相关性、科学价值、技术创新、证据质量和科研影响的最终排序分数。
 
-分类器还应显式判断 AI relevance，避免把纯科学论文或普通 AI 新闻误送入 AI4S Scorer。具体字段约束、单标签或多标签策略、失败回退与数据库 migration 必须在下一阶段先设计再实现。
+第一版不保存未经校准、容易造成误解的自报 `confidence`；如后续有校准数据，再作为独立设计加入。Analyzer 必须显式判断 AI relevance，避免把纯科学论文或普通 AI 新闻送入深度摘要。失败回退、模型版本和数据库 migration 在后续阶段实现。
 
 ## 8. AI4S Scoring
 
@@ -212,9 +266,9 @@ Daily / Weekly switch
 | --- | --- | --- |
 | Phase 0 Baseline | 固化并验证原 ai-daily Pipeline | 完成 |
 | Phase 1 Domain | 固化 7 类领域、内容类型和总体设计 | 本阶段完成 |
-| Phase 2 Sources | 运行第一版 Source Pool，以真实数据校准数量与质量 | 配置准备完成，待观察 |
-| Phase 3 Model | 设计 AI4S 领域对象与边界 | 待开始 |
-| Phase 4 DB | 设计并实现可迁移的 schema | 待开始 |
+| Phase 2 Sources | 运行第一版 Source Pool，以真实数据校准数量与质量 | 完成首轮配置与验证 |
+| Phase 3 Model | 设计 AI4S 领域对象与边界 | 完成 |
+| Phase 4 DB | 设计并实现可迁移的 schema | 下一阶段 |
 | Phase 5 Classification | 实现领域、内容类型、置信度和 AI relevance 分类 | 待开始 |
 | Phase 6 Scorer | 接入并校准 AI4S Scorer | 待开始 |
 | Phase 7 Summarizer | 接入 AI4S 结构化摘要 | 待开始 |
