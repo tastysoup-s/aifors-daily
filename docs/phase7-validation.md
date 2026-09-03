@@ -4,7 +4,7 @@
 
 Phase 7 validates the existing Fetch → Analyze → Summarize backend under a strict API-call budget. It does not implement Daily, Weekly, frontend, workflow, crawling, README/PDF retrieval, schema changes, or taxonomy changes.
 
-Validation was performed on `feat/ai4s-redesign` on 2026-09-03 using `data/ai4s_dev.db`. The stable `main` branch and `data/ai_daily.db` were not modified.
+Validation was performed on `feat/ai4s-redesign` on 2026-09-03, and all recorded Phase 7 validation commands explicitly targeted `data/ai4s_dev.db` or a temporary copy. The stable `main` branch was not modified. A final audit found that a separate default-path Fetch batch had written 45 Items to `data/ai_daily.db` at `2026-09-03T04:52:20.870923+00:00`; its SHA256 changed from the earlier recorded `3CBF173E...E16E83` to `B3400E34...E770AC`. The source process cannot be established from repository history, so the reference database was neither restored nor otherwise changed during the audit.
 
 ## 2. Fetch Content Improvement
 
@@ -133,6 +133,7 @@ No retries were requested by the application. LiteLLM twice timed out while refr
 - DeepMind RSS supplied empty content for 4 of 5 new entries; Hacker News can also provide no body for external links.
 - Three older sparse summaries remain sparse. They were intentionally not regenerated, and 90 newly fetched items remain unanalyzed to respect the validation budget.
 - GitHub README, landing-page text, and paper full text remain intentionally out of scope.
+- The reference `data/ai_daily.db` received an independent/default-path Fetch batch during validation. Its data was preserved, but the process responsible should be identified before relying on that file as an immutable baseline.
 
 ## 10. Readiness Decision
 
