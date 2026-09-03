@@ -71,8 +71,29 @@
       cursor: pointer;
       font: inherit;
       font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      max-width: 100%;
     }
+    .category-label, .count-badge { white-space: nowrap; }
+    .count-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-inline-size: 1.65em;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #e9eeeb;
+      color: #536159;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.5;
+      flex-shrink: 0;
+    }
+    .category-nav button.is-zero:not(.active) { opacity: .58; }
     .category-nav button.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .category-nav button.active .count-badge { background: rgba(255, 255, 255, .2); color: white; }
     main { padding-bottom: 64px; }
     .view[hidden] { display: none; }
     .report-head { margin: 28px 0 20px; }
@@ -102,15 +123,19 @@
     }
     .score.high { background: var(--high); }
     .score.mid { background: var(--mid); }
-    .badges, .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-    .badge, .tag { border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+    .badges, .tags { display: flex; flex-wrap: wrap; column-gap: 7px; row-gap: 7px; margin-top: 12px; }
+    .badge, .tag { display: inline-flex; align-items: center; max-width: 100%; border-radius: 6px; padding: 3px 8px; font-size: 12px; overflow-wrap: anywhere; }
     .badge { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
     .badge.type { background: #e7eef5; color: var(--blue); }
+    .badge.score-inline { background: #edf1ee; color: var(--ink); }
     .tag { background: #f0f2f0; color: var(--muted); }
     .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 22px; margin-top: 22px; }
     .field { min-width: 0; }
     .field h4 { margin: 0 0 4px; color: var(--muted); font-size: 12px; letter-spacing: .06em; }
     .field p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .low-information { margin-top: 22px; padding: 16px 18px; border-radius: 10px; background: #f7faf8; border: 1px solid var(--line); }
+    .low-information h4 { margin: 0 0 4px; font-size: 14px; color: var(--ink); }
+    .low-information p { margin: 0; color: var(--muted); white-space: pre-line; }
     .card-foot {
       display: flex;
       align-items: center;
@@ -168,36 +193,51 @@
   <main class="shell">
     <nav class="category-nav" aria-label="领域筛选">
       {% for category_id, label in categories %}
-      <button type="button" data-category-button="{{ category_id }}">{{ label }}</button>
+      <button
+        type="button"
+        class="{{ 'is-zero' if daily_category_counts[category_id] == 0 else '' }}"
+        data-category-button="{{ category_id }}"
+        data-count-daily="{{ daily_category_counts[category_id] }}"
+        data-count-weekly="{{ weekly_category_counts[category_id] }}"
+      >
+        <span class="category-label">{{ label }}</span>
+        <span class="count-badge" data-category-count>{{ format_category_count(daily_category_counts[category_id]) }}</span>
+      </button>
       {% endfor %}
     </nav>
 
-    {% macro report_card(report_item, compact=false) -%}
+    {% macro report_card(card, compact=false) -%}
+      {% set report_item = card.report_item %}
       {% set analysis = report_item.analysis %}
-      {% set summary = analysis.summary %}
       <article class="card{% if compact %} representative{% endif %}" data-report-card data-category="{{ report_item.category }}">
         <div class="card-head">
           <h3><a href="{{ analysis.item.url }}" target="_blank" rel="noopener noreferrer">{{ analysis.item.title }}</a></h3>
+          {% if not compact %}
           <span class="score {{ 'high' if analysis.analyzer.score >= 8 else 'mid' }}">{{ analysis.analyzer.score }}/10</span>
+          {% endif %}
         </div>
         <div class="badges">
           <span class="badge">{{ category_labels[report_item.category] }}</span>
           <span class="badge type">{{ content_type_labels[analysis.analyzer.content_type] }}</span>
+          {% if compact %}<span class="badge score-inline">{{ analysis.analyzer.score }}/10</span>{% endif %}
         </div>
         {% if analysis.analyzer.tags %}
         <div class="tags">{% for tag in analysis.analyzer.tags %}<span class="tag">{{ tag }}</span>{% endfor %}</div>
         {% endif %}
-        {% if compact %}
-        <div class="summary-grid"><div class="field"><h4>主要结果</h4><p>{{ summary.main_result }}</p></div></div>
+        {% if card.low_information %}
+        <div class="low-information">
+          <h4>信息有限</h4>
+          <p>{% if compact %}当前来源提供的信息较少，
+建议查看原文了解完整方法与结果。{% else %}当前来源仅提供简短介绍，
+暂无足够信息生成完整科研解读。{% endif %}</p>
+        </div>
         {% else %}
         <div class="summary-grid">
-          <div class="field"><h4>科学问题</h4><p>{{ summary.scientific_problem }}</p></div>
-          <div class="field"><h4>AI 方法</h4><p>{{ summary.ai_method }}</p></div>
-          <div class="field"><h4>主要结果</h4><p>{{ summary.main_result }}</p></div>
-          <div class="field"><h4>创新点</h4><p>{{ summary.innovation }}</p></div>
-          <div class="field"><h4>科研意义</h4><p>{{ summary.scientific_significance }}</p></div>
-          <div class="field"><h4>科研资源</h4><p>{{ summary.resources or '未提供' }}</p></div>
+          {% for section in card.sections %}<div class="field"><h4>{{ section.label }}</h4><p>{{ section.text }}</p></div>{% endfor %}
         </div>
+        {% endif %}
+        {% if not compact and card.resources %}
+        <div class="summary-grid"><div class="field"><h4>科研资源</h4><p>{{ card.resources }}</p></div></div>
         {% endif %}
         <footer class="card-foot">
           <span>{{ analysis.item.published_at.strftime('%Y-%m-%d') }}</span>
@@ -215,7 +255,7 @@
         <p class="meta">{{ daily.period_start.strftime('%Y-%m-%d') }} · {{ daily.items|length }} 项已完成处理的 AI4S 内容</p>
       </header>
       {% if daily.items %}
-      <div class="cards">{% for item in daily.items %}{{ report_card(item) }}{% endfor %}</div>
+      <div class="cards">{% for card in daily_cards %}{{ report_card(card) }}{% endfor %}</div>
       <p class="empty filter-empty" data-filter-empty>该领域在本期 Daily Report 中暂无内容。</p>
       {% else %}
       <p class="empty">本期 Daily Report 已生成，但没有符合条件的新内容。</p>
@@ -253,7 +293,7 @@
         </section>
         <section>
           <header class="report-head"><p class="eyebrow">Representative Works</p><h2>代表工作</h2></header>
-          {% if weekly.items %}<div class="cards">{% for item in weekly.items %}{{ report_card(item, true) }}{% endfor %}</div>
+          {% if weekly.items %}<div class="cards">{% for card in weekly_cards %}{{ report_card(card, true) }}{% endfor %}</div>
           {% else %}<p class="empty">本期没有可展示的代表工作。</p>{% endif %}
           <p class="empty filter-empty" data-filter-empty>该领域在本期代表工作中暂无内容。</p>
         </section>
@@ -276,6 +316,17 @@
       return location.hash === '#weekly' ? 'weekly' : 'daily';
     }
 
+    function updateCategoryCounts(viewName) {
+      document.querySelectorAll('[data-category-button]').forEach(button => {
+        const count = Number(button.getAttribute(`data-count-${viewName}`));
+        const countLabel = count >= 100 ? '99+' : String(count);
+        const categoryLabel = button.querySelector('.category-label').textContent;
+        button.querySelector('[data-category-count]').textContent = countLabel;
+        button.classList.toggle('is-zero', count === 0);
+        button.setAttribute('aria-label', `${categoryLabel} ${countLabel}`);
+      });
+    }
+
     function applyCategory() {
       document.querySelectorAll('[data-report-card]').forEach(card => {
         card.hidden = activeCategory !== 'all' && card.dataset.category !== activeCategory;
@@ -295,6 +346,7 @@
         button.classList.toggle('active', active);
         button.setAttribute('aria-current', active ? 'page' : 'false');
       });
+      updateCategoryCounts(name);
       applyCategory();
     }
 
