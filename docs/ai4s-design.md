@@ -233,18 +233,17 @@ resources
 
 ## 10. Daily Report
 
-未来 Daily Report 每日生成一次，按以下层次组织：
+Daily Report 使用 UTC 自然日，以 `summarized_at` 表示内容真正完成处理的日期。它从 `ai4s_analyses` 中选择 `is_ai4s=true`、达到 `score_threshold` 且已有结构化摘要的内容，按 `score DESC, published_at DESC` 排序，并复用 `top_n` 限额。日报是确定性筛选，不调用 LLM；空日报也会持久化。
 
 ```text
-Highlights
-+ Category
+python -m src.main generate-daily --db data/ai4s_dev.db [--report-date YYYY-MM-DD]
 ```
-
-Highlights 展示跨领域最重要的少量工作；Category 分区覆盖 7 个领域，并允许某日无内容的领域保持为空。具体选择规则、配额和模板在后续阶段实现，本阶段不修改 Jinja2。
 
 ## 11. Weekly Report
 
-未来 Weekly Report 每周生成两次。它不是日报的机械拼接，而是：
+Weekly Report 每周生成两次。Wednesday slot 覆盖周一至周三，Sunday slot 覆盖周四至周日，均为 UTC。显式 `--report-date` 只接受周三或周日；不传日期时，使用当前日期当天的有效 slot，或最近一个周三/周日 slot。
+
+它不是日报的机械拼接，而是：
 
 ```text
 聚合
@@ -253,7 +252,15 @@ Highlights 展示跨领域最重要的少量工作；Category 分区覆盖 7 个
 → 研究热点
 ```
 
-周报需要消除跨日重复，识别连续主题，比较不同方法和证据，并说明热点是短期新闻密度还是持续研究趋势。生成逻辑、时间窗口和成本预算应独立设计。
+周报直接读取该窗口的结构化 `AI4SSummary`，按领域分组，并在最多 30 条确定性预选后调用 `models.summarizer` 一次完成趋势综合。发送给模型的内容不含原始正文。`overview`、`category_trends`、`watchlist` 由模型生成；代表工作由程序按每领域前 1～2 条加全局高分项确定，最多 10 条。
+
+```text
+python -m src.main generate-weekly --db data/ai4s_dev.db [--report-date YYYY-MM-DD]
+```
+
+## Report Layer
+
+`reports` 保存 Daily/Weekly 的时间窗口、周报综合、模型与成本；`report_items` 以 `(report_id, url)` 为主键保存有序代表内容和领域。`UNIQUE(report_type, period_start, period_end)` 保证同一 slot 只生成一次，第二次执行读取已有报告，不重复调用 LLM。同一文章可以同时属于 Daily 和 Weekly，前端只需使用 `get_daily_report`、`get_latest_daily_report`、`get_weekly_report`、`get_latest_weekly_report` 和 `get_report_items`，无需重新筛选。
 
 ## 12. Frontend
 
@@ -297,10 +304,11 @@ AI4S 派生状态保存在独立的 `ai4s_analyses` 表中，以 `items.url` 为
 | Phase 4 DB | 设计并实现可迁移的 AI4S schema | 完成 |
 | Phase 5 Analyzer | 合并领域、内容类型、AI relevance 和 Scoring | 完成 |
 | Phase 6 Summary | 接入 AI4S 结构化摘要 | 完成 |
-| Phase 7 Daily | 实现每日 Highlights 与分类报告 | 下一阶段 |
-| Phase 8 Weekly | 实现每周两次的聚合和趋势分析 | 待开始 |
-| Phase 9 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
-| Phase 10 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
-| Phase 11 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
+| Phase 7 Validation | 真实验证 AI4S 后端处理质量 | 完成 |
+| Phase 8 Daily | 实现每日确定性报告 | 完成 |
+| Phase 9 Weekly | 实现每周两次的聚合和趋势分析 | 完成 |
+| Phase 10 Frontend | 增加 Daily/Weekly 切换与分类导航 | 待开始 |
+| Phase 11 Workflow | 调整运行计划、发布和故障处理 | 待开始 |
+| Phase 12 Tests/Docs | 完成端到端测试和运维文档 | 待开始 |
 
-Phase 6 完成后，核心 AI4S backend processing 已形成。下一阶段只应设计 **Daily Report**，Weekly、Frontend 和 Workflow 尚未开始。
+Phase 8/9 完成后，Report Layer 已可供前端直接读取。下一阶段只应开始 Frontend；Workflow 和 Pages 尚未开始。

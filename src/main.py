@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from src.ai4s_analyzer import run_ai4s_analyze
 from src.ai4s_daily import generate_daily_report
 from src.ai4s_summarizer import run_ai4s_summarize
+from src.ai4s_weekly import generate_weekly_report, latest_weekly_report_date
 from src.config import load_config
 from src.dedup import dedup_by_url
 from src.fetchers import fetch_all
@@ -107,6 +108,24 @@ def run_generate_daily_cmd(
         storage.close()
 
 
+async def run_generate_weekly_cmd(
+    sources_path: Path = Path("config/sources.yaml"),
+    preferences_path: Path = Path("config/preferences.yaml"),
+    db_path: Path = Path("data/ai_daily.db"),
+    report_date: date | None = None,
+) -> dict[str, object]:
+    config = load_config(sources_path=sources_path, preferences_path=preferences_path)
+    storage = Storage(db_path)
+    storage.init()
+    try:
+        resolved_date = report_date or latest_weekly_report_date(
+            datetime.now(timezone.utc).date()
+        )
+        return await generate_weekly_report(storage, config, resolved_date)
+    finally:
+        storage.close()
+
+
 async def run_render_cmd(
     sources_path: Path = Path("config/sources.yaml"),
     preferences_path: Path = Path("config/preferences.yaml"),
@@ -139,6 +158,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ("summarize", "Score unscored items and summarize the top-N"),
         ("summarize-ai4s", "Summarize high-scoring AI4S analyses"),
         ("generate-daily", "Generate a persisted AI4S daily report"),
+        ("generate-weekly", "Generate a persisted AI4S weekly report"),
         ("render", "Render summarized items to site/index.html"),
     ):
         p = sub.add_parser(name, help=help_)
@@ -147,8 +167,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         p.add_argument("--db", default="data/ai_daily.db")
         if name in ("analyze", "summarize-ai4s"):
             p.add_argument("--limit", type=_positive_int)
-        if name == "generate-daily":
-            p.add_argument("--report-date", type=_iso_date)
+        if name in ("generate-daily", "generate-weekly"):
+            date_type = _weekly_date if name == "generate-weekly" else _iso_date
+            p.add_argument("--report-date", type=date_type)
         if name == "render":
             p.add_argument("--output-dir", default="site")
             p.add_argument("--within-days", type=int, default=30)
@@ -168,6 +189,15 @@ def _iso_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as error:
         raise argparse.ArgumentTypeError("must be YYYY-MM-DD") from error
+
+
+def _weekly_date(value: str) -> date:
+    parsed = _iso_date(value)
+    if parsed.weekday() not in (2, 6):
+        raise argparse.ArgumentTypeError(
+            "weekly report date must be a Wednesday or Sunday"
+        )
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -215,6 +245,21 @@ def main(argv: list[str] | None = None) -> int:
             f"period={result['period']} candidates={result['candidates']} "
             f"selected={result['selected']} categories={','.join(result['categories'])} "
             f"report_id={result['report_id']} created={str(result['created']).lower()}"
+        )
+        return 0
+    if args.command == "generate-weekly":
+        result = asyncio.run(run_generate_weekly_cmd(
+            sources_path=Path(args.sources),
+            preferences_path=Path(args.preferences),
+            db_path=Path(args.db),
+            report_date=args.report_date,
+        ))
+        print(
+            f"period={result['period']} candidates={result['candidates']} "
+            f"representatives={result['representatives']} "
+            f"categories={','.join(result['categories'])} "
+            f"report_id={result['report_id']} created={str(result['created']).lower()} "
+            f"llm_calls={result['llm_calls']} cost=${result['cost_usd']:.6f}"
         )
         return 0
     if args.command == "render":
