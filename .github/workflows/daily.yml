@@ -1,22 +1,25 @@
-name: daily
+name: ai4s-daily
 
 on:
   schedule:
-    # GitHub Actions schedule 是 best-effort，高峰期可能延迟数小时甚至跳过。
-    # 给三个时间点，任一触发即跑；同一天重跑是幂等的（fetched=N stored=0 summarize=noop）。
-    - cron: "0 23 * * *"   # UTC 23:00 = 北京 07:00
-    - cron: "30 0 * * *"   # UTC 00:30 = 北京 08:30  (兜底 1)
-    - cron: "0 2 * * *"    # UTC 02:00 = 北京 10:00  (兜底 2)
+    # Report periods and slot decisions use UTC throughout the application.
+    - cron: "30 0 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: ai4s-daily-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
-  daily:
+  publish:
     runs-on: ubuntu-latest
+    env:
+      AI4S_DB: data/ai4s.db
     steps:
-      - name: Checkout main (code)
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -29,11 +32,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Prepare data-branch workdir (fetch existing or start orphan)
+      - name: Prepare persistent data branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -e
+          set -euo pipefail
           rm -rf data-branch
           mkdir data-branch
           cd data-branch
@@ -45,42 +48,64 @@ jobs:
           else
             git checkout -q --orphan data
             git rm -rfq . 2>/dev/null || true
-            echo "data branch missing; will create on first push."
+            echo "Data branch missing; it will be created after a successful run."
           fi
 
-      - name: Restore previous state from data branch
+      - name: Restore production database
         run: |
           mkdir -p data docs
-          cp -r data-branch/data/. data/ 2>/dev/null || true
-          cp -r data-branch/docs/. docs/ 2>/dev/null || true
+          if [ -f data-branch/data/ai4s.db ]; then
+            cp data-branch/data/ai4s.db "$AI4S_DB"
+          fi
 
-      - name: Run pipeline (fetch + summarize + render)
+      - name: Fetch sources
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python -m src.main fetch
-          python -m src.main summarize
-          python -m src.main render --output-dir docs
+        run: python -m src.main fetch --db "$AI4S_DB"
 
-      - name: Commit & push to data branch
+      - name: Analyze AI4S items
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python -m src.main analyze --db "$AI4S_DB"
+
+      - name: Summarize high-scoring AI4S items
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python -m src.main summarize-ai4s --db "$AI4S_DB"
+
+      - name: Generate daily report
+        run: python -m src.main generate-daily --db "$AI4S_DB" --report-date "$(date -u +%F)"
+
+      - name: Generate Wednesday or Sunday weekly report
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          set -e
+          weekday="$(date -u +%u)"
+          if [ "$weekday" = "3" ] || [ "$weekday" = "7" ]; then
+            python -m src.main generate-weekly --db "$AI4S_DB" --report-date "$(date -u +%F)"
+          else
+            echo "Not a Wednesday/Sunday UTC slot; skipping weekly report."
+          fi
+
+      - name: Render AI4S reports
+        run: |
+          python -m src.main render-ai4s --db "$AI4S_DB" --output-dir docs
+          test -s docs/index.html
+
+      - name: Persist database and published site
+        run: |
+          set -euo pipefail
+          mkdir -p data-branch/data
+          cp "$AI4S_DB" data-branch/data/ai4s.db
+          rm -rf data-branch/docs
+          cp -r docs data-branch/docs
           cd data-branch
-          rm -rf data docs
-          cp -r ../data ./data 2>/dev/null || true
-          cp -r ../docs ./docs 2>/dev/null || true
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add -A data docs
+          git add data/ai4s.db docs
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No persistent state changes to commit."
           else
-            git commit -m "daily update $(date -u +%Y-%m-%d)"
+            git commit -m "ai4s update $(date -u +%Y-%m-%d)"
             git push -u origin data
           fi
