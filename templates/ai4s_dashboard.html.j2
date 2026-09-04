@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AI for Science 科研情报自动分析与趋势追踪">
+  <title>AI4S Daily · Scientific Intelligence</title>
+  {% include "_ai4s_styles.html.j2" %}
+</head>
+<body data-active-view="daily">
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute;overflow:hidden">
+    <defs>
+      <symbol id="icon-all" viewBox="0 0 64 64"><circle cx="32" cy="32" r="7" fill="currentColor"/><circle cx="14" cy="19" r="4" fill="currentColor"/><circle cx="50" cy="17" r="4" fill="currentColor"/><circle cx="15" cy="48" r="4" fill="currentColor"/><circle cx="51" cy="46" r="4" fill="currentColor"/><path d="M19 21l8 7m10-1l9-7M20 45l8-8m9 1l10 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+      <symbol id="icon-biology" viewBox="0 0 64 64"><path d="M19 9c22 10 4 36 26 46M45 9C23 19 41 45 19 55M23 17h18M20 28h24M20 39h24M23 50h18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></symbol>
+      <symbol id="icon-medicine" viewBox="0 0 64 64"><path d="M25 9h14v16h16v14H39v16H25V39H9V25h16z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><path d="M12 43h9l4-8 5 12 6-16 5 12h11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+      <symbol id="icon-chemistry" viewBox="0 0 64 64"><path d="M21 13l11-6 11 6v13l-11 6-11-6zM32 32v13m0 0l-11 6m11-6 11 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/><circle cx="21" cy="51" r="5" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="43" cy="51" r="5" fill="none" stroke="currentColor" stroke-width="3"/></symbol>
+      <symbol id="icon-materials" viewBox="0 0 64 64"><path d="M14 14h15v15H14zm21 0h15v15H35zM14 35h15v15H14zm21 0h15v15H35zM29 21h6M21 29v6m22-6v6m-14 8h6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linejoin="round"/></symbol>
+      <symbol id="icon-physics" viewBox="0 0 64 64"><circle cx="32" cy="32" r="5" fill="currentColor"/><ellipse cx="32" cy="32" rx="25" ry="10" fill="none" stroke="currentColor" stroke-width="2.5"/><ellipse cx="32" cy="32" rx="25" ry="10" transform="rotate(60 32 32)" fill="none" stroke="currentColor" stroke-width="2.5"/><ellipse cx="32" cy="32" rx="25" ry="10" transform="rotate(120 32 32)" fill="none" stroke="currentColor" stroke-width="2.5"/></symbol>
+      <symbol id="icon-earth" viewBox="0 0 64 64"><circle cx="32" cy="32" r="24" fill="none" stroke="currentColor" stroke-width="3"/><path d="M8 32h48M32 8c9 8 13 16 13 24S41 48 32 56c-9-8-13-16-13-24S23 16 32 8zM13 20h38M13 44h38" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+      <symbol id="icon-general" viewBox="0 0 64 64"><circle cx="32" cy="32" r="7" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="12" cy="17" r="5" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="52" cy="14" r="5" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="12" cy="49" r="5" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="52" cy="50" r="5" fill="none" stroke="currentColor" stroke-width="3"/><path d="M16 20l11 8m10-1l11-10M17 46l10-9m10 0l11 10" fill="none" stroke="currentColor" stroke-width="3"/></symbol>
+    </defs>
+  </svg>
+
+  {% macro category_icon(category_id) -%}<svg aria-hidden="true" viewBox="0 0 64 64"><use href="#icon-{{ category_id }}"></use></svg>{%- endmacro %}
+
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="AI4S Daily 首页"><span class="brand-mark">{{ category_icon('all') }}</span><span class="brand-copy"><strong>AI4S Daily</strong><span>Scientific Intelligence</span></span></a>
+      <nav class="primary-nav" aria-label="主要导航">
+        <a href="#daily" data-view-button="daily">Daily</a><a href="#weekly" data-view-button="weekly">Weekly</a><a href="#categories" data-section-link="categories">Categories</a><a href="#about" data-section-link="about">How it works</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="kicker">AI for Science · Research Intelligence</p>
+          <h1 id="hero-title">AI4S Daily<span>AI for Science 科研情报自动分析与趋势追踪</span></h1>
+          <p class="hero-description">自动聚合论文、模型、数据集、科研工具与研究动态，并提取科学问题、AI 方法、关键结果与研究价值。</p>
+          <div class="hero-metrics" aria-label="系统概览"><div class="hero-metric"><strong>{{ daily_overview.total }}</strong><span>今日精选</span></div><div class="hero-metric"><strong>{{ daily_overview.covered_categories }}/7</strong><span>覆盖领域</span></div><div class="hero-metric"><strong>{{ daily_overview.source_count }}</strong><span>当前数据源</span></div><div class="hero-metric"><strong>{{ generated_at.split(' ')[0] }}</strong><span>Last Updated · UTC</span></div></div>
+        </div>
+        <div class="hero-visual" aria-label="AI4S 科学领域关联图">
+          <svg class="intelligence-map" viewBox="0 0 400 380" role="img" aria-labelledby="map-title map-description"><title id="map-title">Scientific Intelligence Map</title><desc id="map-description">AI 连接生物、医学、化学、材料、物理与地球科学。</desc><circle class="map-ring" cx="200" cy="180" r="115"/><circle class="map-ring" cx="200" cy="180" r="77"/><path class="map-line" d="M200 180L96 92M200 180L198 51M200 180L307 91M200 180L327 226M200 180L220 313M200 180L79 250"/><circle class="map-node" cx="96" cy="92" r="31"/><circle class="map-node" cx="198" cy="51" r="30"/><circle class="map-node" cx="307" cy="91" r="31"/><circle class="map-node" cx="327" cy="226" r="31"/><circle class="map-node" cx="220" cy="313" r="31"/><circle class="map-node" cx="79" cy="250" r="31"/><circle class="map-core" cx="200" cy="180" r="41"/><text class="map-label" x="96" y="96">Biology</text><text class="map-label" x="198" y="55">Medicine</text><text class="map-label" x="307" y="95">Chemistry</text><text class="map-label" x="327" y="230">Materials</text><text class="map-label" x="220" y="317">Physics</text><text class="map-label" x="79" y="254">Earth</text><text class="map-label map-core-label" x="200" y="185">AI</text></svg>
+          <p class="map-caption">Scientific Intelligence Map</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="overview shell" id="categories" aria-labelledby="overview-title">
+      <div class="section-heading"><div><p class="eyebrow">Signal Overview</p><h2 id="overview-title">科研情报概览</h2></div><p><span data-dashboard-mode>Daily</span> 报告中的领域覆盖、内容结构与当前关注重心。</p></div>
+      <div class="dashboard-grid">
+        <section class="dashboard-panel" aria-labelledby="domain-distribution-title"><h3 id="domain-distribution-title">领域分布</h3><p class="panel-intro">按本期入选内容统计</p><div class="category-bars">
+          {% for category_id, label in categories if category_id != 'all' %}<div class="bar-row" data-category="{{ category_id }}" data-dashboard-category data-label="{{ label }}" data-count-daily="{{ daily_category_counts[category_id] }}" data-count-weekly="{{ weekly_category_counts[category_id] }}"><span class="bar-label">{{ category_icon(category_id) }}<span>{{ label }}</span></span><span class="bar-track" aria-hidden="true"><span class="bar-fill" data-bar-fill></span></span><span class="bar-count" data-bar-count>{{ daily_category_counts[category_id] }}</span></div>{% endfor %}
+        </div></section>
+        <section class="dashboard-panel" aria-labelledby="type-distribution-title"><h3 id="type-distribution-title">内容类型</h3><p class="panel-intro">论文、模型、数据与科研工具的组合</p>
+          <div class="distribution-track" aria-hidden="true">{% for content_type, label in content_type_labels.items() %}<span class="distribution-segment" data-type-segment data-count-daily="{{ daily_overview.content_type_counts[content_type] }}" data-count-weekly="{{ weekly_overview.content_type_counts[content_type] }}"></span>{% endfor %}</div>
+          <div class="distribution-legend">{% for content_type, label in content_type_labels.items() %}<div class="legend-item" data-type-legend data-count-daily="{{ daily_overview.content_type_counts[content_type] }}" data-count-weekly="{{ weekly_overview.content_type_counts[content_type] }}"><span class="legend-name"><span class="legend-dot"></span>{{ label }}</span><strong data-type-count>{{ daily_overview.content_type_counts[content_type] }}</strong></div>{% endfor %}</div>
+          <div class="overview-callout"><span>最高关注领域</span><strong data-top-category>{% if daily_overview.top_category %}{{ category_labels[daily_overview.top_category] }} · {{ daily_category_counts[daily_overview.top_category] }}{% else %}暂无数据{% endif %}</strong></div>
+        </section>
+      </div>
+      <nav class="category-nav" aria-label="领域筛选">{% for category_id, label in categories %}<button type="button" class="{{ 'is-zero' if daily_category_counts[category_id] == 0 else '' }}" data-category="{{ category_id }}" data-category-button="{{ category_id }}" data-count-daily="{{ daily_category_counts[category_id] }}" data-count-weekly="{{ weekly_category_counts[category_id] }}">{{ category_icon(category_id) }}<span class="category-label">{{ label }}</span><span class="count-badge" data-category-count>{{ format_category_count(daily_category_counts[category_id]) }}</span></button>{% endfor %}</nav>
+    </section>
+
+    {% macro science_visual(card, category_id) -%}<figure class="science-visual" data-science-visual data-visual-kind="{{ 'source-image' if card.image_url else 'category-fallback' }}"><span class="science-fallback">{{ category_icon(category_id) }}</span>{% if card.image_url %}<img src="{{ card.image_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.hidden=true;this.closest('figure').dataset.visualKind='category-fallback'">{% endif %}<figcaption>{{ category_labels[category_id] }}</figcaption></figure>{%- endmacro %}
+
+    {% macro report_card(card, compact=false) -%}
+      {% set report_item = card.report_item %}{% set analysis = report_item.analysis %}
+      <article class="intel-card{% if compact %} representative{% endif %}" data-report-card data-category="{{ report_item.category }}"><div class="card-grid"><div class="card-copy">
+        <div class="badges"><span class="badge">{{ category_icon(report_item.category) }}{{ category_labels[report_item.category] }}</span><span class="badge type">{{ content_type_labels[analysis.analyzer.content_type] }}</span><span class="badge source">{{ analysis.item.source }}</span><span class="score {{ 'high' if analysis.analyzer.score >= 8 else 'mid' }}">{{ analysis.analyzer.score }}/10</span></div>
+        <h3><a href="{{ analysis.item.url }}" target="_blank" rel="noopener noreferrer">{{ analysis.item.title }}</a></h3><div class="article-meta"><span>{{ analysis.item.published_at.strftime('%Y-%m-%d') }}</span><span>{{ 'Weekly representative' if compact else 'Daily highlight' }}</span></div>
+        {% if analysis.analyzer.tags %}<div class="tags">{% for tag in analysis.analyzer.tags %}<span class="tag">{{ tag }}</span>{% endfor %}</div>{% endif %}
+        {% if card.low_information %}<div class="low-information"><h4>信息有限</h4><p>{% if compact %}当前来源提供的信息较少，建议查看原文了解完整方法与结果。{% else %}当前来源仅提供简短介绍，暂无足够信息生成完整科研解读。{% endif %}</p></div>{% else %}<div class="summary-grid">{% for section in card.sections %}<div class="field{% if not compact %} field--{{ section.kind }}{% endif %}"><h4>{{ section.label }}</h4><p>{{ section.text }}</p></div>{% endfor %}</div>{% endif %}
+        {% if not compact and card.resources %}<div class="resources"><h4>科研资源</h4><p>{{ card.resources }}</p></div>{% endif %}<footer class="card-foot"><span>{{ analysis.item.source }}</span><a class="read-link" href="{{ analysis.item.url }}" target="_blank" rel="noopener noreferrer">阅读原文 →</a></footer>
+      </div>{{ science_visual(card, report_item.category) }}</div></article>
+    {%- endmacro %}
+
+    <div class="shell">
+      <section class="view" id="daily" data-view="daily">{% if daily %}<header class="report-head"><div><p class="eyebrow">Today's Highlights</p><h2>今日科研精选</h2></div><p class="meta">{{ daily.period_start.strftime('%Y-%m-%d') }} · {{ daily.items|length }} 项已完成分析的 AI4S 内容</p></header>{% if daily.items %}<div class="cards">{% for card in daily_cards %}{{ report_card(card) }}{% endfor %}</div><p class="empty filter-empty" data-filter-empty>该领域在本期 Daily Report 中暂无内容。</p>{% else %}<p class="empty">本期 Daily Report 已生成，但没有符合条件的新内容。</p>{% endif %}{% else %}<header class="report-head"><div><p class="eyebrow">Today's Highlights</p><h2>今日科研精选</h2></div></header><p class="empty">尚未生成 Daily Report。完成分析与摘要后再生成日报。</p>{% endif %}</section>
+
+      <section class="view" id="weekly" data-view="weekly" hidden>{% if weekly %}<header class="report-head"><div><p class="eyebrow">Weekly Intelligence Brief</p><h2>全局研究趋势</h2></div><p class="meta">{{ weekly.period_start.strftime('%Y-%m-%d') }} → {{ weekly.period_end.strftime('%Y-%m-%d') }} · {{ weekly.items|length }} 项代表工作</p></header>{% if weekly.items or weekly.overview %}<div class="weekly-layout">
+        <section class="weekly-overview"><div class="weekly-stat"><strong>{{ weekly.items|length }}</strong><span>Representative works</span></div><div><h3>本期概览 Overview</h3><p>{{ weekly.overview or '本期暂无足够信息形成概览。' }}</p></div></section>
+        <section class="weekly-section"><div class="weekly-section-head"><h3>Category Trends</h3><span>领域趋势 · 按领域追踪研究信号</span></div>{% if weekly.category_trends %}<div class="trend-list">{% for category_id, label in categories if category_id != 'all' and category_id in weekly.category_trends %}<article class="trend" data-category="{{ category_id }}"><div class="trend-head">{{ category_icon(category_id) }}<h4>{{ label }}</h4><span class="trend-count">{{ weekly_category_counts[category_id] }} items</span></div><p>{{ weekly.category_trends[category_id] }}</p><div class="bar-track" aria-hidden="true"><div class="bar-fill" data-weekly-trend-bar data-count="{{ weekly_category_counts[category_id] }}"></div></div></article>{% endfor %}</div>{% else %}<p class="empty">本期暂无足够证据形成领域趋势。</p>{% endif %}</section>
+        <section class="watchlist-panel"><div><p class="eyebrow">Research Watchlist</p><h3>值得持续关注</h3></div>{% if weekly.watchlist %}<ul class="watchlist">{% for topic in weekly.watchlist %}<li>{{ topic }}</li>{% endfor %}</ul>{% else %}<p>本期暂无新增关注方向。</p>{% endif %}</section>
+        <section><header class="report-head"><div><p class="eyebrow">Representative Works</p><h2>代表工作</h2></div><p class="meta">更紧凑地查看方法亮点、关键结果与研究价值</p></header>{% if weekly.items %}<div class="representative-grid">{% for card in weekly_cards %}{{ report_card(card, true) }}{% endfor %}</div>{% else %}<p class="empty">本期没有可展示的代表工作。</p>{% endif %}<p class="empty filter-empty" data-filter-empty>该领域在本期代表工作中暂无内容。</p></section>
+      </div>{% else %}<p class="empty">本期 Weekly Report 已生成，但没有符合条件的内容。</p>{% endif %}{% else %}<header class="report-head"><div><p class="eyebrow">Weekly Intelligence Brief</p><h2>全局研究趋势</h2></div></header><p class="empty">尚未生成 Weekly Report。周报将在 Wednesday 或 Sunday slot 生成。</p>{% endif %}</section>
+
+      <section class="system-section" id="about" aria-labelledby="pipeline-title"><div class="section-heading"><div><p class="eyebrow">Automated Research Pipeline</p><h2 id="pipeline-title">How AI4S Daily Works</h2></div><p>从多源科研信号到可阅读的 Daily / Weekly 情报，流程保持可追踪、可重复发布。</p></div>
+        <div class="pipeline" aria-label="AI4S Daily 自动化流程">{% for title, description in [('Sources', '论文与科研动态'), ('Fetcher', '统一抓取与去重'), ('AI4S Analyzer', '分类与价值评分'), ('High-value Filter', '筛选高质量信号'), ('Summarizer', '结构化科研解读'), ('Daily / Weekly', '日报与趋势综合'), ('GitHub Pages', '静态自动发布')] %}<div class="pipeline-step"><span class="pipeline-index">0{{ loop.index }}</span><strong>{{ title }}</strong><span>{{ description }}</span></div>{% endfor %}</div>
+        <div class="system-status" aria-label="系统状态"><div class="status-card online"><span>Pipeline</span><strong>Automated</strong></div><div class="status-card"><span>Last Update</span><strong>{{ generated_at }}</strong></div><div class="status-card"><span>Report Items</span><strong>{{ daily_overview.total }} Daily · {{ weekly_overview.total }} Weekly</strong></div><div class="status-card"><span>Sources</span><strong>{{ source_count }} active in reports</strong></div></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer"><div class="shell footer-inner"><span>AI-assisted scientific intelligence · Static deployment</span><span>UTC reporting periods · Automated by GitHub Actions</span></div></footer>
+
+  <script>
+    let activeCategory = 'all';
+    function activeViewName() { if (location.hash === '#weekly') return 'weekly'; if (location.hash === '#daily') return 'daily'; return document.body.dataset.activeView || 'daily'; }
+    function updateCategoryCounts(viewName) { document.querySelectorAll('[data-category-button]').forEach(button => { const count = Number(button.getAttribute(`data-count-${viewName}`)); const countLabel = count >= 100 ? '99+' : String(count); const categoryLabel = button.querySelector('.category-label').textContent; button.querySelector('[data-category-count]').textContent = countLabel; button.classList.toggle('is-zero', count === 0); button.setAttribute('aria-label', `${categoryLabel} ${countLabel}`); }); }
+    function updateDashboard(viewName) {
+      const rows = Array.from(document.querySelectorAll('[data-dashboard-category]')); const counts = rows.map(row => Number(row.getAttribute(`data-count-${viewName}`))); const maxCount = Math.max(0, ...counts);
+      rows.forEach((row, index) => { const count = counts[index]; row.querySelector('[data-bar-count]').textContent = String(count); row.querySelector('[data-bar-fill]').style.width = `${maxCount ? (count / maxCount) * 100 : 0}%`; });
+      document.querySelectorAll('[data-type-segment]').forEach(segment => { const count = Number(segment.getAttribute(`data-count-${viewName}`)); segment.style.flexGrow = String(count); segment.hidden = count === 0; });
+      document.querySelectorAll('[data-type-legend]').forEach(item => { item.querySelector('[data-type-count]').textContent = item.getAttribute(`data-count-${viewName}`); });
+      const topIndex = counts.indexOf(Math.max(...counts)); document.querySelector('[data-top-category]').textContent = maxCount ? `${rows[topIndex].dataset.label} · ${maxCount}` : '暂无数据'; document.querySelector('[data-dashboard-mode]').textContent = viewName === 'weekly' ? 'Weekly' : 'Daily';
+    }
+    function applyCategory() { document.querySelectorAll('[data-report-card]').forEach(card => { card.hidden = activeCategory !== 'all' && card.dataset.category !== activeCategory; }); document.querySelectorAll('[data-filter-empty]').forEach(message => { const view = message.closest('[data-view]'); const visible = Array.from(view.querySelectorAll('[data-report-card]')).some(card => !card.hidden); message.style.display = activeCategory !== 'all' && !visible ? 'block' : 'none'; }); }
+    function updateTrendBars() { const bars = Array.from(document.querySelectorAll('[data-weekly-trend-bar]')); const maxCount = Math.max(0, ...bars.map(bar => Number(bar.dataset.count))); bars.forEach(bar => { bar.style.width = `${maxCount ? (Number(bar.dataset.count) / maxCount) * 100 : 0}%`; }); }
+    function setView() { const name = activeViewName(); document.body.dataset.activeView = name; document.querySelectorAll('[data-view]').forEach(view => { view.hidden = view.dataset.view !== name; }); document.querySelectorAll('[data-view-button]').forEach(button => { const active = button.dataset.viewButton === name; button.classList.toggle('active', active); button.setAttribute('aria-current', active ? 'page' : 'false'); }); updateCategoryCounts(name); updateDashboard(name); applyCategory(); }
+    document.querySelectorAll('[data-category-button]').forEach(button => { button.addEventListener('click', () => { activeCategory = button.dataset.categoryButton; document.querySelectorAll('[data-category-button]').forEach(item => item.classList.toggle('active', item === button)); applyCategory(); document.querySelector(`[data-view="${activeViewName()}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' }); }); });
+    document.querySelector('[data-category-button="all"]').classList.add('active'); window.addEventListener('hashchange', setView); updateTrendBars(); setView();
+    if ('IntersectionObserver' in window) { const sectionLinks = document.querySelectorAll('[data-section-link]'); const observer = new IntersectionObserver(entries => { entries.forEach(entry => { if (!entry.isIntersecting) return; sectionLinks.forEach(link => link.classList.toggle('active', link.dataset.sectionLink === entry.target.id)); }); }, { rootMargin: '-25% 0px -60% 0px' }); document.querySelectorAll('#categories, #about').forEach(section => observer.observe(section)); }
+  </script>
+</body>
+</html>

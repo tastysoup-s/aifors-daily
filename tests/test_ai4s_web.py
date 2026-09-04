@@ -8,9 +8,11 @@ from src.ai4s_weekly import weekly_period
 from src.main import _parse_args
 from src.models import AI4SAnalysis, AI4SSummary, AnalyzerResult, Item
 from src.notifier.ai4s_web import (
+    build_report_overview,
     format_category_count,
     is_informative_summary_text,
     render_ai4s_site,
+    source_image_url,
 )
 from src.storage import Storage
 
@@ -24,6 +26,7 @@ def _store_analysis(
     content_type: str = "paper",
     score: int = 8,
     summary_values: dict[str, str] | None = None,
+    raw: dict | None = None,
 ) -> AI4SAnalysis:
     item = Item(
         url=url,
@@ -31,6 +34,7 @@ def _store_analysis(
         content="raw content",
         published_at=datetime(2026, 9, 3, 8, tzinfo=timezone.utc),
         source="test-source",
+        raw=raw or {},
     )
     analyzer = AnalyzerResult(
         is_ai4s=True,
@@ -158,6 +162,100 @@ def test_rendered_cards_use_report_category_and_content_type(tmp_path: Path):
     assert 'class="count-badge" data-category-count' in html
     assert "flex-wrap: wrap" in html
     assert "overflow-wrap: anywhere" in html
+
+
+def test_report_overview_uses_persisted_report_data(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    biology = _store_analysis(
+        storage,
+        "https://example.com/overview-bio",
+        title="Biology Paper",
+        category="biology",
+        content_type="paper",
+    )
+    materials = _store_analysis(
+        storage,
+        "https://example.com/overview-materials",
+        title="Materials Model",
+        category="materials",
+        content_type="model",
+    )
+    start, end = daily_period(date(2026, 9, 3))
+    report, _ = storage.create_report("daily", start, end, [biology, materials])
+
+    overview = build_report_overview(report)
+    storage.close()
+
+    assert overview["total"] == 2
+    assert overview["covered_categories"] == 2
+    assert overview["source_count"] == 1
+    assert overview["category_counts"]["biology"] == 1
+    assert overview["content_type_counts"]["paper"] == 1
+    assert overview["content_type_counts"]["model"] == 1
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        ({"image_url": "https://images.example.com/paper.png"}, "https://images.example.com/paper.png"),
+        ({"media_thumbnail": [{"url": "https://images.example.com/thumb.jpg"}]}, "https://images.example.com/thumb.jpg"),
+        ({"open_graph": {"og:image": "https://images.example.com/og.webp"}}, "https://images.example.com/og.webp"),
+        ({"image": "javascript:alert(1)"}, None),
+        ({"url": "https://example.com/article"}, None),
+    ),
+)
+def test_source_image_url_only_accepts_explicit_http_image_metadata(raw, expected):
+    assert source_image_url(raw) == expected
+
+
+def test_rendered_visual_uses_source_image_or_category_fallback(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    with_image = _store_analysis(
+        storage,
+        "https://example.com/with-image",
+        title="Paper With Image",
+        category="biology",
+        raw={"media_content": [{"url": "https://images.example.com/source.jpg"}]},
+    )
+    fallback = _store_analysis(
+        storage,
+        "https://example.com/fallback",
+        title="Paper Without Image",
+        category="physics",
+    )
+    start, end = daily_period(date(2026, 9, 3))
+    storage.create_report("daily", start, end, [with_image, fallback])
+    output_dir = tmp_path / "site"
+    render_ai4s_site(storage, output_dir=output_dir)
+    storage.close()
+
+    html = (output_dir / "index.html").read_text(encoding="utf-8")
+    image_card = _card_for(html, "Paper With Image")
+    fallback_card = _card_for(html, "Paper Without Image")
+    assert 'data-visual-kind="source-image"' in image_card
+    assert 'src="https://images.example.com/source.jpg"' in image_card
+    assert 'loading="lazy"' in image_card
+    assert 'referrerpolicy="no-referrer"' in image_card
+    assert 'data-visual-kind="category-fallback"' in fallback_card
+    assert 'href="#icon-physics"' in fallback_card
+
+
+def test_dashboard_navigation_pipeline_and_responsive_contract(tmp_path: Path):
+    _, html = _render(tmp_path)
+
+    assert "Scientific Intelligence Map" in html
+    assert 'id="categories"' in html
+    assert "data-dashboard-category" in html
+    assert "data-type-segment" in html
+    assert 'id="about"' in html
+    for step in ("Sources", "Fetcher", "AI4S Analyzer", "High-value Filter", "Summarizer", "Daily / Weekly", "GitHub Pages"):
+        assert step in html
+    assert "@media (max-width: 1024px)" in html
+    assert "@media (max-width: 768px)" in html
+    assert "@media (max-width: 390px)" in html
+    assert "@media (prefers-reduced-motion: reduce)" in html
 
 
 def test_category_counts_include_all_categories_and_zero_values(tmp_path: Path):
