@@ -34,6 +34,7 @@ def _add_analysis(
     score: int = 8,
     is_ai4s: bool = True,
     category: str = "biology",
+    source: str = "test",
     summarized: bool = True,
     summarized_at: str = "2026-09-03T12:00:00+00:00",
     published_at: str = "2026-09-03T10:00:00+00:00",
@@ -43,7 +44,7 @@ def _add_analysis(
             url=url,
             title=url,
             content="content",
-            source="test",
+            source=source,
             published_at=datetime.fromisoformat(published_at),
         )
     ])
@@ -146,6 +147,92 @@ def test_daily_filters_orders_limits_and_preserves_category(storage: Storage):
         "https://score-8-new",
     ]
     assert [item.category for item in report.items] == ["chemistry", "materials"]
+
+
+def test_daily_diversifies_exact_score_ties_without_crossing_score_tiers(
+    storage: Storage,
+):
+    _add_analysis(
+        storage,
+        "https://score-9-arxiv",
+        score=9,
+        source="arxiv:arxiv-ai-methods",
+        published_at="2026-09-03T12:00:00+00:00",
+    )
+    _add_analysis(
+        storage,
+        "https://score-8-arxiv-new",
+        score=8,
+        source="arxiv:arxiv-ai-methods",
+        published_at="2026-09-03T11:00:00+00:00",
+    )
+    _add_analysis(
+        storage,
+        "https://score-8-arxiv-old",
+        score=8,
+        source="arxiv:arxiv-biology-medicine",
+        published_at="2026-09-03T10:00:00+00:00",
+    )
+    _add_analysis(
+        storage,
+        "https://score-8-biorxiv",
+        score=8,
+        source="rss:biorxiv-ai4s",
+        published_at="2026-09-03T09:00:00+00:00",
+    )
+    _add_analysis(
+        storage,
+        "https://score-7-medrxiv",
+        score=7,
+        source="rss:medrxiv-ai4s",
+        published_at="2026-09-03T13:00:00+00:00",
+    )
+
+    result = generate_daily_report(
+        storage,
+        Config(sources=[], keywords=[], score_threshold=7, top_n=3),
+        REPORT_DATE,
+    )
+    report = storage.get_daily_report(REPORT_DATE)
+
+    assert report is not None
+    assert [item.analysis.item.url for item in report.items] == [
+        "https://score-9-arxiv",
+        "https://score-8-biorxiv",
+        "https://score-8-arxiv-new",
+    ]
+    assert "https://score-7-medrxiv" not in {
+        item.analysis.item.url for item in report.items
+    }
+    assert result["unique_sources"] == 2
+    assert result["source_families"] == 2
+
+
+def test_daily_logs_source_diversity(storage: Storage, caplog):
+    _add_analysis(
+        storage,
+        "https://arxiv",
+        source="arxiv:arxiv-ai-methods",
+    )
+    _add_analysis(
+        storage,
+        "https://github",
+        source="github:github-ai-for-science",
+    )
+
+    with caplog.at_level("INFO"):
+        generate_daily_report(
+            storage,
+            Config(sources=[], keywords=[], score_threshold=7, top_n=10),
+            REPORT_DATE,
+        )
+
+    assert any(
+        "items=2 unique_sources=2 source_families=2" in record.message
+        for record in caplog.records
+    )
+    assert any("arXiv=1" in record.message for record in caplog.records)
+    assert any("GitHub=1" in record.message for record in caplog.records)
 
 
 def test_empty_daily_report_is_persisted(storage: Storage):

@@ -95,7 +95,7 @@ sources:
   - name: apple-ml-research
     type: rss
     group: research_labs
-    provider: Apple Machine Learning Research
+    provider: Apple ML Research
     url: https://machinelearning.apple.com/rss.xml
 
   # ── Community Signals：高分门槛，避免通用 AI 新闻占据主池 ──

@@ -26,6 +26,7 @@ def _store_analysis(
     category: str,
     content_type: str = "paper",
     score: int = 8,
+    source: str = "test-source",
     summary_values: dict[str, str] | None = None,
     raw: dict | None = None,
 ) -> AI4SAnalysis:
@@ -34,7 +35,7 @@ def _store_analysis(
         title=title,
         content="raw content",
         published_at=datetime(2026, 9, 3, 8, tzinfo=timezone.utc),
-        source="test-source",
+        source=source,
         raw=raw or {},
     )
     analyzer = AnalyzerResult(
@@ -196,6 +197,53 @@ def test_report_overview_uses_persisted_report_data(tmp_path: Path):
     assert overview["content_type_counts"]["model"] == 1
 
 
+def test_report_overview_counts_real_sources_and_families(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    raw_sources = (
+        ["arxiv:arxiv-ai-methods"] * 3
+        + ["rss:biorxiv-ai4s"] * 2
+        + ["rss:medrxiv-ai4s"]
+        + ["github:github-ai-for-science"] * 2
+        + ["rss:deepmind-blog"] * 2
+    )
+    categories = ("biology", "medicine", "materials", "earth")
+    analyses = [
+        _store_analysis(
+            storage,
+            f"https://example.com/source-{index}",
+            title=f"Source Item {index}",
+            category=categories[index % len(categories)],
+            source=raw_source,
+        )
+        for index, raw_source in enumerate(raw_sources)
+    ]
+    start, end = daily_period(date(2026, 9, 3))
+    report, _ = storage.create_report("daily", start, end, analyses)
+
+    overview = build_report_overview(report)
+    output_dir = tmp_path / "site"
+    render_ai4s_site(storage, output_dir=output_dir)
+    html = (output_dir / "index.html").read_text(encoding="utf-8")
+    storage.close()
+
+    assert overview["total"] == 10
+    assert overview["source_count"] == 5
+    assert overview["source_family_count"] == 4
+    assert overview["covered_categories"] == 4
+    assert sum(source["count"] for source in overview["source_distribution"]) == 10
+    assert {source["name"]: source["count"] for source in overview["source_distribution"]} == {
+        "arXiv": 3,
+        "bioRxiv": 2,
+        "medRxiv": 1,
+        "GitHub": 2,
+        "Google DeepMind": 2,
+    }
+    assert "10 篇科研精选 · 来自 5 个信息源 · 覆盖 4 个领域" in html
+    assert "今日 10 篇精选来自 5 个不同信息源" in html
+    assert 'data-count-daily="3"' in html
+
+
 def test_source_coverage_uses_configured_groups_and_deduplicates_providers():
     coverage = build_source_coverage([
         {"name": "arxiv-ai", "type": "arxiv", "group": "papers", "provider": "arXiv"},
@@ -204,13 +252,17 @@ def test_source_coverage_uses_configured_groups_and_deduplicates_providers():
         {"name": "github", "type": "github", "group": "code", "provider": "GitHub"},
         {"name": "deepmind", "type": "rss", "group": "research_labs", "provider": "Google DeepMind"},
         {"name": "hn", "type": "hackernews", "group": "community", "provider": "Hacker News"},
+        {"name": "disabled", "type": "rss", "group": "research_labs", "provider": "Disabled Lab", "enabled": False},
     ])
 
     assert coverage["active_count"] == 6
+    assert coverage["family_count"] == 5
     assert [group["label"] for group in coverage["groups"]] == [
         "Papers", "Preprints", "Open Source", "Research Labs", "Community"
     ]
     assert coverage["groups"][0]["providers"] == ["arXiv"]
+    assert coverage["groups"][0]["count"] == 2
+    assert all("Disabled Lab" not in group["providers"] for group in coverage["groups"])
 
 
 def test_rendered_source_coverage_comes_from_config(tmp_path: Path):
@@ -223,7 +275,7 @@ def test_rendered_source_coverage_comes_from_config(tmp_path: Path):
             {"name": "arxiv-ai", "type": "arxiv", "group": "papers", "provider": "arXiv"},
             {"name": "biorxiv", "type": "rss", "group": "preprints", "provider": "bioRxiv"},
             {"name": "github", "type": "github", "group": "code", "provider": "GitHub"},
-            {"name": "apple", "type": "rss", "group": "research_labs", "provider": "Apple Machine Learning Research"},
+            {"name": "apple-ml-research", "type": "rss", "group": "research_labs", "provider": "Apple ML Research"},
             {"name": "hn", "type": "hackernews", "group": "community", "provider": "Hacker News"},
         ],
         output_dir=output_dir,
@@ -235,7 +287,51 @@ def test_rendered_source_coverage_comes_from_config(tmp_path: Path):
     assert "5 active sources" in html
     for label in ("Papers", "Preprints", "Open Source", "Research Labs", "Community"):
         assert f">{label}<" in html
-    assert "Apple Machine Learning Research" in html
+    assert "Apple ML Research" in html
+    assert "1 sources" in html
+
+
+def test_source_badges_filters_and_combined_filter_contract(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    biorxiv = _store_analysis(
+        storage,
+        "https://example.com/biorxiv",
+        title="bioRxiv Biology Study",
+        category="biology",
+        source="rss:biorxiv-ai4s",
+    )
+    deepmind = _store_analysis(
+        storage,
+        "https://example.com/deepmind",
+        title="DeepMind Earth Study",
+        category="earth",
+        source="rss:deepmind-blog",
+    )
+    start, end = daily_period(date(2026, 9, 3))
+    storage.create_report("daily", start, end, [biorxiv, deepmind])
+    output_dir = tmp_path / "site"
+    render_ai4s_site(
+        storage,
+        sources=[
+            {"name": "biorxiv-ai4s", "type": "rss", "group": "preprints"},
+            {"name": "deepmind-blog", "type": "rss", "group": "research_labs"},
+        ],
+        output_dir=output_dir,
+    )
+    storage.close()
+
+    html = (output_dir / "index.html").read_text(encoding="utf-8")
+    biorxiv_card = _card_for(html, "bioRxiv Biology Study")
+    assert 'data-source="rss:biorxiv-ai4s"' in biorxiv_card
+    assert 'data-source-family="preprints"' in biorxiv_card
+    assert 'data-source-name="biorxiv"' in biorxiv_card
+    assert '<span class="badge source">bioRxiv</span>' in biorxiv_card
+    assert '<span class="badge source-type">Preprint</span>' in biorxiv_card
+    assert 'data-source-filter-value="biorxiv"' in html
+    assert 'data-source-filter-value="research_labs"' in html
+    assert "categoryMatches && sourceMatches" in html
+    assert "当前领域与来源组合暂无内容" in html
 
 
 @pytest.mark.parametrize(
