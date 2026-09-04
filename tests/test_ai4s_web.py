@@ -225,8 +225,15 @@ def test_rendered_visual_uses_source_image_or_category_fallback(tmp_path: Path):
         title="Paper Without Image",
         category="physics",
     )
+    earth_image = _store_analysis(
+        storage,
+        "https://example.com/earth-image",
+        title="Earth Paper With Image",
+        category="earth",
+        raw={"image_url": "https://images.example.com/earth-wide.jpg"},
+    )
     start, end = daily_period(date(2026, 9, 3))
-    storage.create_report("daily", start, end, [with_image, fallback])
+    storage.create_report("daily", start, end, [with_image, fallback, earth_image])
     output_dir = tmp_path / "site"
     render_ai4s_site(storage, output_dir=output_dir)
     storage.close()
@@ -234,19 +241,37 @@ def test_rendered_visual_uses_source_image_or_category_fallback(tmp_path: Path):
     html = (output_dir / "index.html").read_text(encoding="utf-8")
     image_card = _card_for(html, "Paper With Image")
     fallback_card = _card_for(html, "Paper Without Image")
+    earth_card = _card_for(html, "Earth Paper With Image")
     assert 'data-visual-kind="source-image"' in image_card
     assert 'src="https://images.example.com/source.jpg"' in image_card
     assert 'loading="lazy"' in image_card
     assert 'referrerpolicy="no-referrer"' in image_card
     assert 'data-visual-kind="category-fallback"' in fallback_card
     assert 'href="#icon-physics"' in fallback_card
+    assert 'data-category="earth"' in earth_card
+    assert 'data-earth-visual' in earth_card
+    assert 'data-source-image' in earth_card
+    assert "visualFit < .62" in html
+    assert "image.naturalWidth < 420" in html
 
 
 def test_dashboard_navigation_pipeline_and_responsive_contract(tmp_path: Path):
     _, html = _render(tmp_path)
 
+    header = html.split("</header>", 1)[0]
+    footer = html.split('<footer class="site-footer">', 1)[1]
     assert "Scientific Intelligence Map" in html
+    assert 'href="#daily"' in header
+    assert 'href="#weekly"' in header
+    assert 'href="#categories"' not in header
+    assert 'href="#about"' not in header
+    assert 'class="footer-links"' in footer
+    assert 'href="#categories"' in footer
+    assert 'href="#about"' in footer
     assert 'id="categories"' in html
+    assert 'class="section-heading overview-heading"' in html
+    assert html.count('class="dashboard-panel-head"') == 2
+    assert html.count('class="dashboard-panel-content') == 2
     assert "data-dashboard-category" in html
     assert "data-type-segment" in html
     assert 'id="about"' in html

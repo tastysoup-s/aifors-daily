@@ -27,7 +27,7 @@
     <div class="shell header-inner">
       <a class="brand" href="#top" aria-label="AI4S Daily 首页"><span class="brand-mark">{{ category_icon('all') }}</span><span class="brand-copy"><strong>AI4S Daily</strong><span>Scientific Intelligence</span></span></a>
       <nav class="primary-nav" aria-label="主要导航">
-        <a href="#daily" data-view-button="daily">Daily</a><a href="#weekly" data-view-button="weekly">Weekly</a><a href="#categories" data-section-link="categories">Categories</a><a href="#about" data-section-link="about">How it works</a>
+        <a href="#daily" data-view-button="daily">Daily</a><a href="#weekly" data-view-button="weekly">Weekly</a>
       </nav>
     </div>
   </header>
@@ -49,21 +49,21 @@
     </section>
 
     <section class="overview shell" id="categories" aria-labelledby="overview-title">
-      <div class="section-heading"><div><p class="eyebrow">Signal Overview</p><h2 id="overview-title">科研情报概览</h2></div><p><span data-dashboard-mode>Daily</span> 报告中的领域覆盖、内容结构与当前关注重心。</p></div>
+      <div class="section-heading overview-heading"><div><p class="eyebrow">Signal Overview</p><h2 id="overview-title">科研情报概览</h2></div><p><span data-dashboard-mode>Daily</span> 报告中的领域覆盖、内容结构与当前关注重心。</p></div>
       <div class="dashboard-grid">
-        <section class="dashboard-panel" aria-labelledby="domain-distribution-title"><h3 id="domain-distribution-title">领域分布</h3><p class="panel-intro">按本期入选内容统计</p><div class="category-bars">
+        <section class="dashboard-panel" aria-labelledby="domain-distribution-title"><header class="dashboard-panel-head"><h3 id="domain-distribution-title">领域分布</h3><p class="panel-intro">按本期入选内容统计</p></header><div class="dashboard-panel-content category-bars">
           {% for category_id, label in categories if category_id != 'all' %}<div class="bar-row" data-category="{{ category_id }}" data-dashboard-category data-label="{{ label }}" data-count-daily="{{ daily_category_counts[category_id] }}" data-count-weekly="{{ weekly_category_counts[category_id] }}"><span class="bar-label">{{ category_icon(category_id) }}<span>{{ label }}</span></span><span class="bar-track" aria-hidden="true"><span class="bar-fill" data-bar-fill></span></span><span class="bar-count" data-bar-count>{{ daily_category_counts[category_id] }}</span></div>{% endfor %}
         </div></section>
-        <section class="dashboard-panel" aria-labelledby="type-distribution-title"><h3 id="type-distribution-title">内容类型</h3><p class="panel-intro">论文、模型、数据与科研工具的组合</p>
+        <section class="dashboard-panel" aria-labelledby="type-distribution-title"><header class="dashboard-panel-head"><h3 id="type-distribution-title">内容类型</h3><p class="panel-intro">论文、模型、数据与科研工具的组合</p></header><div class="dashboard-panel-content type-distribution">
           <div class="distribution-track" aria-hidden="true">{% for content_type, label in content_type_labels.items() %}<span class="distribution-segment" data-type-segment data-count-daily="{{ daily_overview.content_type_counts[content_type] }}" data-count-weekly="{{ weekly_overview.content_type_counts[content_type] }}"></span>{% endfor %}</div>
           <div class="distribution-legend">{% for content_type, label in content_type_labels.items() %}<div class="legend-item" data-type-legend data-count-daily="{{ daily_overview.content_type_counts[content_type] }}" data-count-weekly="{{ weekly_overview.content_type_counts[content_type] }}"><span class="legend-name"><span class="legend-dot"></span>{{ label }}</span><strong data-type-count>{{ daily_overview.content_type_counts[content_type] }}</strong></div>{% endfor %}</div>
           <div class="overview-callout"><span>最高关注领域</span><strong data-top-category>{% if daily_overview.top_category %}{{ category_labels[daily_overview.top_category] }} · {{ daily_category_counts[daily_overview.top_category] }}{% else %}暂无数据{% endif %}</strong></div>
-        </section>
+        </div></section>
       </div>
       <nav class="category-nav" aria-label="领域筛选">{% for category_id, label in categories %}<button type="button" class="{{ 'is-zero' if daily_category_counts[category_id] == 0 else '' }}" data-category="{{ category_id }}" data-category-button="{{ category_id }}" data-count-daily="{{ daily_category_counts[category_id] }}" data-count-weekly="{{ weekly_category_counts[category_id] }}">{{ category_icon(category_id) }}<span class="category-label">{{ label }}</span><span class="count-badge" data-category-count>{{ format_category_count(daily_category_counts[category_id]) }}</span></button>{% endfor %}</nav>
     </section>
 
-    {% macro science_visual(card, category_id) -%}<figure class="science-visual" data-science-visual data-visual-kind="{{ 'source-image' if card.image_url else 'category-fallback' }}"><span class="science-fallback">{{ category_icon(category_id) }}</span>{% if card.image_url %}<img src="{{ card.image_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.hidden=true;this.closest('figure').dataset.visualKind='category-fallback'">{% endif %}<figcaption>{{ category_labels[category_id] }}</figcaption></figure>{%- endmacro %}
+    {% macro science_visual(card, category_id) -%}<figure class="science-visual" data-science-visual data-category="{{ category_id }}" data-visual-kind="{{ 'source-image' if card.image_url else 'category-fallback' }}"><span class="science-fallback{% if category_id == 'earth' %} science-fallback--earth{% endif %}" aria-hidden="true">{% if category_id == 'earth' %}<svg class="earth-science-visual" data-earth-visual viewBox="0 0 180 180"><circle class="earth-atmosphere" cx="90" cy="88" r="62"/><circle class="earth-globe" cx="90" cy="88" r="47"/><path class="earth-grid" d="M43 88h94M90 41c17 14 25 29 25 47s-8 34-25 47c-17-13-25-29-25-47s8-33 25-47zM51 65h78M51 111h78"/><path class="earth-land" d="M60 56l16-7 11 8-3 11 10 8-5 12-15 2-8-10-13-4zm42 45 14-8 11 7-4 13-12 11-12-6z"/><path class="earth-orbit" d="M27 112c17 28 64 38 102 18 19-10 29-24 30-37"/><circle class="earth-signal" cx="157" cy="89" r="4"/><path class="earth-surface" d="M35 149c17-8 34-8 51 0s34 8 57 0"/></svg>{% else %}{{ category_icon(category_id) }}{% endif %}</span>{% if card.image_url %}<img src="{{ card.image_url }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-source-image>{% endif %}<figcaption>{{ category_labels[category_id] }}</figcaption></figure>{%- endmacro %}
 
     {% macro report_card(card, compact=false) -%}
       {% set report_item = card.report_item %}{% set analysis = report_item.analysis %}
@@ -93,7 +93,7 @@
     </div>
   </main>
 
-  <footer class="site-footer"><div class="shell footer-inner"><span>AI-assisted scientific intelligence · Static deployment</span><span>UTC reporting periods · Automated by GitHub Actions</span></div></footer>
+  <footer class="site-footer"><div class="shell footer-inner"><span>AI-assisted scientific intelligence · Static deployment</span><nav class="footer-links" aria-label="辅助导航"><a href="#categories">Categories</a><a href="#about">How it works</a></nav><span>UTC reporting periods · Automated by GitHub Actions</span></div></footer>
 
   <script>
     let activeCategory = 'all';
@@ -108,10 +108,29 @@
     }
     function applyCategory() { document.querySelectorAll('[data-report-card]').forEach(card => { card.hidden = activeCategory !== 'all' && card.dataset.category !== activeCategory; }); document.querySelectorAll('[data-filter-empty]').forEach(message => { const view = message.closest('[data-view]'); const visible = Array.from(view.querySelectorAll('[data-report-card]')).some(card => !card.hidden); message.style.display = activeCategory !== 'all' && !visible ? 'block' : 'none'; }); }
     function updateTrendBars() { const bars = Array.from(document.querySelectorAll('[data-weekly-trend-bar]')); const maxCount = Math.max(0, ...bars.map(bar => Number(bar.dataset.count))); bars.forEach(bar => { bar.style.width = `${maxCount ? (Number(bar.dataset.count) / maxCount) * 100 : 0}%`; }); }
+    function updateScienceImage(image) {
+      const visual = image.closest('[data-science-visual]');
+      if (!visual || !image.naturalWidth || !image.naturalHeight) { if (visual) { image.hidden = true; visual.dataset.visualKind = 'category-fallback'; } return; }
+      let useFallback = false;
+      if (visual.dataset.category === 'earth') {
+        const imageRatio = image.naturalWidth / image.naturalHeight;
+        const frameRatio = visual.clientWidth / Math.max(visual.clientHeight, 1);
+        const visualFit = Math.min(imageRatio, frameRatio) / Math.max(imageRatio, frameRatio);
+        useFallback = image.naturalWidth < 420 || image.naturalHeight < 220 || imageRatio < .75 || imageRatio > 3 || visualFit < .62;
+      }
+      image.hidden = useFallback;
+      visual.dataset.visualKind = useFallback ? 'category-fallback' : 'source-image';
+    }
+    function initializeScienceImages() {
+      document.querySelectorAll('[data-source-image]').forEach(image => {
+        image.addEventListener('load', () => updateScienceImage(image));
+        image.addEventListener('error', () => { image.hidden = true; image.closest('[data-science-visual]').dataset.visualKind = 'category-fallback'; });
+        if (image.complete) updateScienceImage(image);
+      });
+    }
     function setView() { const name = activeViewName(); document.body.dataset.activeView = name; document.querySelectorAll('[data-view]').forEach(view => { view.hidden = view.dataset.view !== name; }); document.querySelectorAll('[data-view-button]').forEach(button => { const active = button.dataset.viewButton === name; button.classList.toggle('active', active); button.setAttribute('aria-current', active ? 'page' : 'false'); }); updateCategoryCounts(name); updateDashboard(name); applyCategory(); }
     document.querySelectorAll('[data-category-button]').forEach(button => { button.addEventListener('click', () => { activeCategory = button.dataset.categoryButton; document.querySelectorAll('[data-category-button]').forEach(item => item.classList.toggle('active', item === button)); applyCategory(); document.querySelector(`[data-view="${activeViewName()}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' }); }); });
-    document.querySelector('[data-category-button="all"]').classList.add('active'); window.addEventListener('hashchange', setView); updateTrendBars(); setView();
-    if ('IntersectionObserver' in window) { const sectionLinks = document.querySelectorAll('[data-section-link]'); const observer = new IntersectionObserver(entries => { entries.forEach(entry => { if (!entry.isIntersecting) return; sectionLinks.forEach(link => link.classList.toggle('active', link.dataset.sectionLink === entry.target.id)); }); }, { rootMargin: '-25% 0px -60% 0px' }); document.querySelectorAll('#categories, #about').forEach(section => observer.observe(section)); }
+    document.querySelector('[data-category-button="all"]').classList.add('active'); window.addEventListener('hashchange', setView); window.addEventListener('resize', () => document.querySelectorAll('[data-source-image]').forEach(updateScienceImage)); initializeScienceImages(); updateTrendBars(); setView();
   </script>
 </body>
 </html>
