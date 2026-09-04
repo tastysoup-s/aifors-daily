@@ -30,6 +30,21 @@ CONTENT_TYPE_LABELS = {
     "research_news": "Research News",
 }
 
+SOURCE_COVERAGE_GROUPS = (
+    ("papers", "Papers"),
+    ("preprints", "Preprints"),
+    ("code", "Open Source"),
+    ("research_labs", "Research Labs"),
+    ("community", "Community"),
+)
+
+_DEFAULT_SOURCE_GROUPS = {
+    "arxiv": "papers",
+    "github": "code",
+    "rss": "research_labs",
+    "hackernews": "community",
+}
+
 _UNINFORMATIVE_SUMMARY_TEXTS = {
     "原文未说明",
     "原文未披露",
@@ -160,6 +175,27 @@ def build_report_overview(report: Report | None) -> dict[str, object]:
     }
 
 
+def build_source_coverage(
+    sources: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Summarize configured sources for the static presentation layer."""
+    providers_by_group = {group_id: [] for group_id, _label in SOURCE_COVERAGE_GROUPS}
+    for source in sources:
+        source_type = str(source.get("type", ""))
+        group_id = str(source.get("group") or _DEFAULT_SOURCE_GROUPS.get(source_type, ""))
+        provider = str(source.get("provider") or source.get("name") or "").strip()
+        providers = providers_by_group.get(group_id)
+        if providers is not None and provider and provider not in providers:
+            providers.append(provider)
+
+    groups = [
+        {"id": group_id, "label": label, "providers": providers_by_group[group_id]}
+        for group_id, label in SOURCE_COVERAGE_GROUPS
+        if providers_by_group[group_id]
+    ]
+    return {"active_count": len(sources), "groups": groups}
+
+
 def _daily_card_view(report_item: ReportItem) -> dict[str, object]:
     summary = report_item.analysis.summary
     sections = []
@@ -221,6 +257,7 @@ def _weekly_card_view(report_item: ReportItem) -> dict[str, object]:
 def render_ai4s_site(
     storage: Storage,
     *,
+    sources: Sequence[Mapping[str, object]] = (),
     output_dir: Path = Path("site"),
     templates_dir: Path = Path("templates"),
 ) -> dict[str, object]:
@@ -257,6 +294,7 @@ def render_ai4s_site(
         daily_overview=daily_overview,
         weekly_overview=weekly_overview,
         source_count=source_count,
+        source_coverage=build_source_coverage(sources),
         format_category_count=format_category_count,
         content_type_labels=CONTENT_TYPE_LABELS,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),

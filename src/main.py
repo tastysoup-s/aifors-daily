@@ -40,7 +40,7 @@ async def run_fetch(
         storage.record_items(unique)
         stored = deduped  # records dedup further by PK but our dedup_by_url already aligned
         logger.info(
-            "fetch summary: fetched=%d deduped=%d stored=%d",
+            "fetch summary: total fetched=%d new items=%d stored=%d",
             fetched, deduped, stored,
         )
         return {"fetched": fetched, "deduped": deduped, "stored": stored}
@@ -150,13 +150,20 @@ async def run_render_cmd(
 
 
 def run_render_ai4s_cmd(
+    sources_path: Path = Path("config/sources.yaml"),
+    preferences_path: Path = Path("config/preferences.yaml"),
     db_path: Path = Path("data/ai_daily.db"),
     output_dir: Path = Path("site"),
 ) -> dict[str, object]:
+    config = load_config(sources_path=sources_path, preferences_path=preferences_path)
     storage = Storage(db_path)
     storage.init()
     try:
-        return render_ai4s_site(storage, output_dir=output_dir)
+        return render_ai4s_site(
+            storage,
+            sources=config.sources,
+            output_dir=output_dir,
+        )
     finally:
         storage.close()
 
@@ -279,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "render-ai4s":
         result = run_render_ai4s_cmd(
+            sources_path=Path(args.sources),
+            preferences_path=Path(args.preferences),
             db_path=Path(args.db),
             output_dir=Path(args.output_dir),
         )

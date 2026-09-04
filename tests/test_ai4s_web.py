@@ -9,6 +9,7 @@ from src.main import _parse_args
 from src.models import AI4SAnalysis, AI4SSummary, AnalyzerResult, Item
 from src.notifier.ai4s_web import (
     build_report_overview,
+    build_source_coverage,
     format_category_count,
     is_informative_summary_text,
     render_ai4s_site,
@@ -193,6 +194,48 @@ def test_report_overview_uses_persisted_report_data(tmp_path: Path):
     assert overview["category_counts"]["biology"] == 1
     assert overview["content_type_counts"]["paper"] == 1
     assert overview["content_type_counts"]["model"] == 1
+
+
+def test_source_coverage_uses_configured_groups_and_deduplicates_providers():
+    coverage = build_source_coverage([
+        {"name": "arxiv-ai", "type": "arxiv", "group": "papers", "provider": "arXiv"},
+        {"name": "arxiv-bio", "type": "arxiv", "group": "papers", "provider": "arXiv"},
+        {"name": "biorxiv", "type": "rss", "group": "preprints", "provider": "bioRxiv"},
+        {"name": "github", "type": "github", "group": "code", "provider": "GitHub"},
+        {"name": "deepmind", "type": "rss", "group": "research_labs", "provider": "Google DeepMind"},
+        {"name": "hn", "type": "hackernews", "group": "community", "provider": "Hacker News"},
+    ])
+
+    assert coverage["active_count"] == 6
+    assert [group["label"] for group in coverage["groups"]] == [
+        "Papers", "Preprints", "Open Source", "Research Labs", "Community"
+    ]
+    assert coverage["groups"][0]["providers"] == ["arXiv"]
+
+
+def test_rendered_source_coverage_comes_from_config(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    output_dir = tmp_path / "site"
+    render_ai4s_site(
+        storage,
+        sources=[
+            {"name": "arxiv-ai", "type": "arxiv", "group": "papers", "provider": "arXiv"},
+            {"name": "biorxiv", "type": "rss", "group": "preprints", "provider": "bioRxiv"},
+            {"name": "github", "type": "github", "group": "code", "provider": "GitHub"},
+            {"name": "apple", "type": "rss", "group": "research_labs", "provider": "Apple Machine Learning Research"},
+            {"name": "hn", "type": "hackernews", "group": "community", "provider": "Hacker News"},
+        ],
+        output_dir=output_dir,
+    )
+    storage.close()
+
+    html = (output_dir / "index.html").read_text(encoding="utf-8")
+    assert "Source Coverage" in html
+    assert "5 active sources" in html
+    for label in ("Papers", "Preprints", "Open Source", "Research Labs", "Community"):
+        assert f">{label}<" in html
+    assert "Apple Machine Learning Research" in html
 
 
 @pytest.mark.parametrize(

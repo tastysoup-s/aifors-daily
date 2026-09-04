@@ -19,7 +19,7 @@ def _item(url: str, source: str = "rss:test") -> Item:
 
 
 @pytest.mark.asyncio
-async def test_run_fetch_dedup_and_store(monkeypatch, tmp_path: Path):
+async def test_run_fetch_dedup_and_store(monkeypatch, tmp_path: Path, caplog):
     sources_file = tmp_path / "sources.yaml"
     prefs_file = tmp_path / "preferences.yaml"
     db_file = tmp_path / "ai_daily.db"
@@ -38,13 +38,18 @@ async def test_run_fetch_dedup_and_store(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setattr("src.main.fetch_all", fetch_all)
 
-    summary = await run_fetch(
-        sources_path=sources_file,
-        preferences_path=prefs_file,
-        db_path=db_file,
-    )
+    with caplog.at_level("INFO"):
+        summary = await run_fetch(
+            sources_path=sources_file,
+            preferences_path=prefs_file,
+            db_path=db_file,
+        )
     assert summary == {"fetched": 3, "deduped": 2, "stored": 2}
     assert db_file.exists()
+    assert any(
+        "total fetched=3" in rec.message and "new items=2" in rec.message
+        for rec in caplog.records
+    )
 
 
 @pytest.mark.asyncio

@@ -1,64 +1,107 @@
 # AI4S-Daily 第一版信息源池。
 # 仅使用现有 arXiv / RSS / GitHub / Hacker News Fetcher；详细取舍见 docs/ai4s-sources.md。
 sources:
-  # ── arXiv：总上限 50，与 baseline 单源上限持平 ──
+  # ── Papers / Preprints：论文与生物医学预印本 ──
+  # arXiv 总上限 50，与 baseline 单源上限持平。
   # 当前 Fetcher 对 categories 使用 OR；科学领域论文仍需未来的 AI 相关性二次过滤。
   - name: arxiv-ai-methods
     type: arxiv
+    group: papers
+    provider: arXiv
     categories: [cs.AI, cs.LG, stat.ML]
     max_results: 20
 
   - name: arxiv-biology-medicine
     type: arxiv
+    group: papers
+    provider: arXiv
     categories: [q-bio.BM, q-bio.GN, q-bio.QM]
     max_results: 10
 
   - name: arxiv-chemistry-materials
     type: arxiv
+    group: papers
+    provider: arXiv
     categories: [physics.chem-ph, cond-mat.mtrl-sci]
     max_results: 10
 
   - name: arxiv-physics-earth
     type: arxiv
+    group: papers
+    provider: arXiv
     categories: [physics.comp-ph, astro-ph.IM, physics.ao-ph, eess.IV]
     max_results: 10
 
-  # ── GitHub：只启用已核验且数量可控的 AI4S Topics ──
+  - name: biorxiv-ai4s
+    type: rss
+    group: preprints
+    provider: bioRxiv
+    url: "https://connect.biorxiv.org/biorxiv_xml.php?subject=bioinformatics+genomics"
+
+  - name: medrxiv-ai4s
+    type: rss
+    group: preprints
+    provider: medRxiv
+    url: "https://connect.medrxiv.org/medrxiv_xml.php?subject=health_informatics+genetic_and_genomic_medicine"
+
+  # ── Code / Open-source：已核验且数量可控的 AI4S Topics ──
   - name: github-ai-for-science
     type: github
+    group: code
+    provider: GitHub
     topic: ai-for-science
     min_stars: 20
 
   - name: github-drug-discovery
     type: github
+    group: code
+    provider: GitHub
     topic: drug-discovery
     min_stars: 100
 
   - name: github-protein-design
     type: github
+    group: code
+    provider: GitHub
     topic: protein-design
     min_stars: 20
 
   - name: github-materials-informatics
     type: github
+    group: code
+    provider: GitHub
     topic: materials-informatics
     min_stars: 20
 
-  # ── 已有科研机构 / 平台 RSS：保留为研究新闻和项目补充 ──
+  # ── Research Labs：官方研究机构 / 平台 RSS ──
   - name: deepmind-blog
     type: rss
+    group: research_labs
+    provider: Google DeepMind
     url: https://deepmind.google/blog/rss.xml
 
   - name: nvidia-dev-blog
     type: rss
+    group: research_labs
+    provider: NVIDIA
     url: https://developer.nvidia.com/blog/feed/
 
   - name: microsoft-research
     type: rss
+    group: research_labs
+    provider: Microsoft Research
     url: https://www.microsoft.com/en-us/research/feed/
 
-  # ── 社区补充：高分门槛，避免通用 AI 新闻占据主池 ──
+  - name: apple-ml-research
+    type: rss
+    group: research_labs
+    provider: Apple Machine Learning Research
+    url: https://machinelearning.apple.com/rss.xml
+
+  # ── Community Signals：高分门槛，避免通用 AI 新闻占据主池 ──
   - name: hackernews-ai-science
     type: hackernews
+    group: community
+    provider: Hacker News
     query: "AI science"
     min_points: 100

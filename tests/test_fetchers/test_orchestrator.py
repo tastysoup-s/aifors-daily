@@ -18,7 +18,7 @@ def _item(url: str) -> Item:
 
 
 @pytest.mark.asyncio
-async def test_fetch_all_aggregates_results(monkeypatch):
+async def test_fetch_all_aggregates_results(monkeypatch, caplog):
     rss = AsyncMock(return_value=[_item("https://a"), _item("https://b")])
     arxiv = AsyncMock(return_value=[_item("https://c")])
     github = AsyncMock(return_value=[])
@@ -34,9 +34,13 @@ async def test_fetch_all_aggregates_results(monkeypatch):
         {"name": "s3", "type": "github", "topic": "agent"},
         {"name": "s4", "type": "hackernews", "query": "AI"},
     ]
-    items = await fetch_all(sources, window_hours=36)
+    with caplog.at_level("INFO"):
+        items = await fetch_all(sources, window_hours=36)
     urls = sorted(i.url for i in items)
     assert urls == ["https://a", "https://b", "https://c"]
+    assert any("Source fetch summary" in rec.message for rec in caplog.records)
+    assert any("s1" in rec.message and "fetched=2" in rec.message for rec in caplog.records)
+    assert any("total fetched=3" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -58,6 +62,7 @@ async def test_fetch_all_isolates_failing_fetcher(monkeypatch, caplog):
     assert [i.url for i in items] == ["https://ok"]
     # Failure was logged.
     assert any("bad" in rec.message and "boom" in rec.message for rec in caplog.records)
+    assert any("bad" in rec.message and "FAILED" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,11 @@
       </div>
     </section>
 
+    {% if source_coverage.groups %}<section class="source-coverage shell" aria-labelledby="source-coverage-title">
+      <header class="source-coverage-head"><div><p class="eyebrow">Source Coverage</p><h2 id="source-coverage-title">多源科研信号</h2></div><strong>{{ source_coverage.active_count }} active sources</strong></header>
+      <div class="source-coverage-grid">{% for group in source_coverage.groups %}<div class="source-group" data-source-group="{{ group.id }}"><span>{{ group.label }}</span><p>{{ group.providers|join(' · ') }}</p></div>{% endfor %}</div>
+    </section>{% endif %}
+
     <section class="overview shell" id="categories" aria-labelledby="overview-title">
       <div class="section-heading overview-heading"><div><p class="eyebrow">Signal Overview</p><h2 id="overview-title">科研情报概览</h2></div><p><span data-dashboard-mode>Daily</span> 报告中的领域覆盖、内容结构与当前关注重心。</p></div>
       <div class="dashboard-grid">
