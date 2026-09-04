@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI4S Daily</title>
+  <style>
+    :root {
+      --bg: #f3f6f4;
+      --surface: #ffffff;
+      --ink: #17211d;
+      --muted: #647169;
+      --line: #dbe3de;
+      --accent: #176b50;
+      --accent-soft: #e1f2eb;
+      --blue: #315b7d;
+      --high: #176b50;
+      --mid: #9a6700;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+    a { color: inherit; }
+    .shell { width: min(1040px, calc(100% - 40px)); margin: 0 auto; }
+    .site-header {
+      background: rgba(255, 255, 255, .94);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+    }
+    .header-inner {
+      min-height: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand h1 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .view-switch { display: flex; gap: 6px; padding: 4px; border-radius: 10px; background: #edf1ee; }
+    .view-switch a {
+      padding: 7px 16px;
+      border-radius: 7px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .view-switch a.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px #18271e18; }
+    .category-nav {
+      margin: 26px 0 22px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .category-nav button {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 7px 13px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      max-width: 100%;
+    }
+    .category-label, .count-badge { white-space: nowrap; }
+    .count-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-inline-size: 1.65em;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #e9eeeb;
+      color: #536159;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.5;
+      flex-shrink: 0;
+    }
+    .category-nav button.is-zero:not(.active) { opacity: .58; }
+    .category-nav button.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .category-nav button.active .count-badge { background: rgba(255, 255, 255, .2); color: white; }
+    main { padding-bottom: 64px; }
+    .view[hidden] { display: none; }
+    .report-head { margin: 28px 0 20px; }
+    .eyebrow { margin: 0 0 4px; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .report-head h2 { margin: 0; font-size: clamp(25px, 4vw, 38px); letter-spacing: -.035em; }
+    .report-head .meta { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+    .cards { display: grid; gap: 18px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 8px 30px rgba(32, 52, 42, .045);
+    }
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+    .card h3 { margin: 0; font-size: 20px; line-height: 1.35; }
+    .card h3 a { text-decoration: none; }
+    .card h3 a:hover { color: var(--accent); }
+    .score {
+      min-width: 42px;
+      border-radius: 9px;
+      padding: 5px 8px;
+      color: white;
+      text-align: center;
+      font-weight: 750;
+      font-size: 13px;
+    }
+    .score.high { background: var(--high); }
+    .score.mid { background: var(--mid); }
+    .badges, .tags { display: flex; flex-wrap: wrap; column-gap: 7px; row-gap: 7px; margin-top: 12px; }
+    .badge, .tag { display: inline-flex; align-items: center; max-width: 100%; border-radius: 6px; padding: 3px 8px; font-size: 12px; overflow-wrap: anywhere; }
+    .badge { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+    .badge.type { background: #e7eef5; color: var(--blue); }
+    .badge.score-inline { background: #edf1ee; color: var(--ink); }
+    .tag { background: #f0f2f0; color: var(--muted); }
+    .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 22px; margin-top: 22px; }
+    .field { min-width: 0; }
+    .field h4 { margin: 0 0 4px; color: var(--muted); font-size: 12px; letter-spacing: .06em; }
+    .field p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .low-information { margin-top: 22px; padding: 16px 18px; border-radius: 10px; background: #f7faf8; border: 1px solid var(--line); }
+    .low-information h4 { margin: 0 0 4px; font-size: 14px; color: var(--ink); }
+    .low-information p { margin: 0; color: var(--muted); white-space: pre-line; }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--line);
+      margin-top: 22px;
+      padding-top: 15px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .read-link { margin-left: auto; color: var(--accent); font-weight: 700; text-decoration: none; }
+    .weekly-layout { display: grid; gap: 18px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+    .panel h3 { margin: 0 0 12px; font-size: 18px; }
+    .panel p { margin: 0; white-space: pre-line; }
+    .trend-list { display: grid; gap: 12px; }
+    .trend { padding: 16px; background: #f7faf8; border-left: 3px solid var(--accent); border-radius: 4px 9px 9px 4px; }
+    .trend h4 { margin: 0 0 5px; color: var(--accent); }
+    .trend p { margin: 0; }
+    .watchlist { margin: 0; padding-left: 22px; }
+    .watchlist li + li { margin-top: 7px; }
+    .representative .summary-grid { grid-template-columns: 1fr; }
+    .empty { padding: 42px 24px; border: 1px dashed #bfcac3; border-radius: 14px; text-align: center; color: var(--muted); background: #f8faf8; }
+    .filter-empty { display: none; margin-top: 16px; }
+    footer.site-footer { border-top: 1px solid var(--line); padding: 22px 0 36px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 700px) {
+      .shell { width: min(100% - 24px, 1040px); }
+      .header-inner { min-height: 70px; align-items: flex-start; flex-direction: column; gap: 10px; padding: 14px 0; }
+      .view-switch { width: 100%; }
+      .view-switch a { flex: 1; text-align: center; }
+      .category-nav { margin-top: 18px; overflow: visible; }
+      .category-nav button { flex: 0 0 auto; }
+      .card, .panel { padding: 18px; }
+      .card-head { flex-direction: column; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .read-link { width: 100%; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <div class="brand">
+        <h1>AI4S Daily</h1>
+        <p>AI for Science research brief · generated 2026-09-04 01:44 UTC</p>
+      </div>
+      <nav class="view-switch" aria-label="报告类型">
+        <a href="#daily" data-view-button="daily">Daily</a>
+        <a href="#weekly" data-view-button="weekly">Weekly</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
+    <nav class="category-nav" aria-label="领域筛选">
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="all"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">All</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="biology"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Biology</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="medicine"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Medicine</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="chemistry"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Chemistry</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="materials"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Materials</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="physics"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Physics</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="earth"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">Earth</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+      <button
+        type="button"
+        class="is-zero"
+        data-category-button="general"
+        data-count-daily="0"
+        data-count-weekly="0"
+      >
+        <span class="category-label">General</span>
+        <span class="count-badge" data-category-count>0</span>
+      </button>
+      
+    </nav>
+
+    
+
+    <section class="view" data-view="daily">
+      
+      <header class="report-head">
+        <p class="eyebrow">Daily Report</p>
+        <h2>今日精选</h2>
+        <p class="meta">2026-09-04 · 0 项已完成处理的 AI4S 内容</p>
+      </header>
+      
+      <p class="empty">本期 Daily Report 已生成，但没有符合条件的新内容。</p>
+      
+      
+    </section>
+
+    <section class="view" data-view="weekly" hidden>
+      
+      <header class="report-head"><p class="eyebrow">AI4S Weekly</p><h2>Weekly Report</h2></header>
+      <p class="empty">尚未生成 Weekly Report。周报将在 Wednesday 或 Sunday slot 生成。</p>
+      
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="shell">Static report snapshot · UTC reporting periods</div></footer>
+  <script>
+    let activeCategory = 'all';
+
+    function activeViewName() {
+      return location.hash === '#weekly' ? 'weekly' : 'daily';
+    }
+
+    function updateCategoryCounts(viewName) {
+      document.querySelectorAll('[data-category-button]').forEach(button => {
+        const count = Number(button.getAttribute(`data-count-${viewName}`));
+        const countLabel = count >= 100 ? '99+' : String(count);
+        const categoryLabel = button.querySelector('.category-label').textContent;
+        button.querySelector('[data-category-count]').textContent = countLabel;
+        button.classList.toggle('is-zero', count === 0);
+        button.setAttribute('aria-label', `${categoryLabel} ${countLabel}`);
+      });
+    }
+
+    function applyCategory() {
+      document.querySelectorAll('[data-report-card]').forEach(card => {
+        card.hidden = activeCategory !== 'all' && card.dataset.category !== activeCategory;
+      });
+      document.querySelectorAll('[data-filter-empty]').forEach(message => {
+        const view = message.closest('[data-view]');
+        const visible = Array.from(view.querySelectorAll('[data-report-card]')).some(card => !card.hidden);
+        message.style.display = activeCategory !== 'all' && !visible ? 'block' : 'none';
+      });
+    }
+
+    function setView() {
+      const name = activeViewName();
+      document.querySelectorAll('[data-view]').forEach(view => { view.hidden = view.dataset.view !== name; });
+      document.querySelectorAll('[data-view-button]').forEach(button => {
+        const active = button.dataset.viewButton === name;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-current', active ? 'page' : 'false');
+      });
+      updateCategoryCounts(name);
+      applyCategory();
+    }
+
+    document.querySelectorAll('[data-category-button]').forEach(button => {
+      button.addEventListener('click', () => {
+        activeCategory = button.dataset.categoryButton;
+        document.querySelectorAll('[data-category-button]').forEach(item => item.classList.toggle('active', item === button));
+        applyCategory();
+      });
+    });
+    document.querySelector('[data-category-button="all"]').classList.add('active');
+    window.addEventListener('hashchange', setView);
+    setView();
+  </script>
+</body>
+</html>
