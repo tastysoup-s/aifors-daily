@@ -313,6 +313,32 @@ def test_factual_clause_survives_missing_information_caveat(text):
     assert is_substantive(text)
 
 
+def test_expanded_title_only_weather_summary_is_still_sparse(storage: Storage):
+    summary = replace(
+        _summary(),
+        scientific_problem=(
+            "原文未说明。标题仅提及该模型为全球天气AI模型，"
+            "未说明其具体要解决的科学问题。"
+        ),
+        ai_method=(
+            "原文未说明。标题仅提及模型名称为WeatherNext 3，"
+            "未披露其具体AI方法、模型架构或训练设计。"
+        ),
+        main_result=(
+            "原文未披露明确量化结果。标题仅称其为最先进、最准确的全球天气AI模型，"
+            "但未提供任何性能指标、对比数据或实验条件。"
+        ),
+        innovation=(
+            "原文未说明。标题仅称其为最先进、最准确，"
+            "未具体说明相对已有方法的新颖之处。"
+        ),
+    )
+    _add_analysis(storage, "https://WeatherNext-expanded", summary=summary)
+    analysis = storage.get_ai4s_analysis("https://WeatherNext-expanded")
+    assert information_score(analysis) == 0
+    assert insufficient_information_reason(analysis) == "insufficient factual fields"
+
+
 @pytest.mark.parametrize("facts, expected_score, reason", [
     (("原文未说明", "原文未说明", "原文未披露明确量化结果", "原文未说明"),
      0, "insufficient factual fields"),
