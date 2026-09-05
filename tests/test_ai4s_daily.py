@@ -1,4 +1,5 @@
 import sqlite3
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -6,8 +7,15 @@ import pytest
 
 from src.ai4s_daily import daily_period, generate_daily_report
 from src.config import Config
+from src.information_sufficiency import (
+    has_sufficient_information,
+    information_score,
+    insufficient_information_reason,
+    is_substantive,
+)
 from src.main import _parse_args
 from src.models import AI4SSummary, AnalyzerResult, Item
+from src.notifier.ai4s_web import render_ai4s_site
 from src.storage import Storage
 
 
@@ -38,6 +46,7 @@ def _add_analysis(
     summarized: bool = True,
     summarized_at: str = "2026-09-03T12:00:00+00:00",
     published_at: str = "2026-09-03T10:00:00+00:00",
+    summary: AI4SSummary | None = None,
 ) -> None:
     storage.record_items([
         Item(
@@ -62,7 +71,7 @@ def _add_analysis(
         ),
     )
     if summarized:
-        storage.save_ai4s_summary(url, _summary())
+        storage.save_ai4s_summary(url, summary if summary is not None else _summary())
         storage._conn_or_die().execute(
             "UPDATE ai4s_analyses SET summarized_at=? WHERE url=?",
             (summarized_at, url),
@@ -279,3 +288,130 @@ def test_daily_cli_accepts_date_and_rejects_invalid_date():
     assert args.report_date == REPORT_DATE
     with pytest.raises(SystemExit):
         _parse_args(["generate-daily", "--report-date", "09/03/2026"])
+
+
+@pytest.mark.parametrize("text", [
+    None, "", " \n ", "原文未说明。", "信息不足", "暂无足够信息！",
+    "当前来源仅提供简短介绍", "原文未披露明确量化结果。",
+    "原文未披露明确的量化结果或实验数据。",
+    "原文未说明训练数据，未披露具体模型或算法。",
+    "原文未披露明确量化结果。仅提供项目名称和描述性标题，无实验数据或性能指标。",
+])
+def test_placeholder_fields_are_not_substantive(text):
+    assert not is_substantive(text)
+
+
+@pytest.mark.parametrize("text", [
+    "采用E(3)-等变神经网络构建原子间势函数模型。",
+    "原文未说明训练数据，但给出了完整实验结果",
+    "原文未披露明确量化结果。定性结果表明模型能区分两类细胞。",
+    "原文未披露模型细节；采用树表示组织细胞群体。",
+    "准确率提高16.3%，训练数据原文未说明。",
+    "MPNN",
+])
+def test_factual_clause_survives_missing_information_caveat(text):
+    assert is_substantive(text)
+
+
+@pytest.mark.parametrize("facts, expected_score, reason", [
+    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "原文未说明"),
+     0, "insufficient factual fields"),
+    (("原子间相互作用", "E(3)-等变神经网络", "原文未说明", "等变原子间势"),
+     3, None),
+    (("研究问题", "信息不足", "信息不足", "创新点"), 2, "no method or result"),
+    (("信息不足", "方法", "结果", "信息不足"), 2, None),
+    (("信息不足", "方法", "信息不足", "信息不足"), 1, "insufficient factual fields"),
+])
+def test_information_rule_uses_only_four_factual_fields(
+    storage: Storage, facts, expected_score, reason
+):
+    summary = replace(
+        _summary(),
+        scientific_problem=facts[0], ai_method=facts[1],
+        main_result=facts[2], innovation=facts[3],
+        assessment="很长的分析研判" * 1000,
+        scientific_significance="丰富科学意义" * 1000,
+        resources="https://example.org/paper",
+    )
+    _add_analysis(storage, "https://facts", summary=summary)
+    analysis = storage.get_ai4s_analysis("https://facts")
+    assert information_score(analysis) == expected_score
+    assert insufficient_information_reason(analysis) == reason
+    assert has_sufficient_information(analysis) is (reason is None)
+    analysis.item.content = "正文宣传" * 3000
+    assert information_score(analysis) == expected_score
+
+
+def _sparse_summary():
+    return replace(
+        _summary(), scientific_problem="原文未说明", ai_method="原文未说明",
+        main_result="原文未披露明确量化结果", innovation="原文未说明",
+        assessment="很长的分析研判" * 100,
+    )
+
+
+@pytest.mark.parametrize("qualified_count", [0, 2])
+def test_daily_never_refills_sparse_items_and_preserves_database(
+    storage: Storage, caplog, qualified_count, tmp_path: Path
+):
+    _add_analysis(storage, "https://WeatherNext", score=10, summary=_sparse_summary())
+    for index in range(qualified_count):
+        _add_analysis(storage, f"https://qualified-{index}")
+    connection = storage._conn_or_die()
+    before = {table: connection.execute(f"SELECT * FROM {table}").fetchall()
+              for table in ("items", "ai4s_analyses")}
+    with caplog.at_level("INFO"):
+        result = generate_daily_report(
+            storage, Config(sources=[], keywords=[], top_n=10), REPORT_DATE
+        )
+    assert result["candidates"] == qualified_count + 1
+    assert result["qualified"] == result["selected"] == qualified_count
+    assert result["filtered_sparse"] == 1
+    assert all(item.analysis.item.url != "https://WeatherNext"
+               for item in storage.get_daily_report(REPORT_DATE).items)
+    for table, rows in before.items():
+        assert connection.execute(f"SELECT * FROM {table}").fetchall() == rows
+    assert f"qualified={qualified_count} filtered_sparse=1 selected={qualified_count}" in caplog.text
+    assert "https://WeatherNext reason=insufficient factual fields information_score=0" in caplog.text
+    rendered = render_ai4s_site(storage, output_dir=tmp_path / "site")
+    assert rendered["daily_items"] == qualified_count
+    assert (tmp_path / "site" / "index.html").is_file()
+
+
+def test_filter_runs_before_top_n_and_source_diversity(storage: Storage, caplog):
+    _add_analysis(storage, "https://sparse-high", score=10, summary=_sparse_summary())
+    _add_analysis(storage, "https://arxiv-high", score=9, source="arxiv:arxiv-ai-methods")
+    _add_analysis(storage, "https://arxiv-tie", source="arxiv:arxiv-ai-methods")
+    _add_analysis(storage, "https://biorxiv", source="rss:biorxiv-ai4s")
+    _add_analysis(storage, "https://github-low", score=7, source="github:github-ai-for-science")
+    _add_analysis(storage, "https://no-method", score=9,
+                  summary=replace(_summary(), ai_method="信息不足", main_result="信息不足"))
+    with caplog.at_level("INFO"):
+        result = generate_daily_report(
+            storage, Config(sources=[], keywords=[], top_n=3), REPORT_DATE
+        )
+    assert [item.analysis.item.url for item in storage.get_daily_report(REPORT_DATE).items] == [
+        "https://arxiv-high", "https://biorxiv", "https://arxiv-tie",
+    ]
+    assert result["qualified"] == 4
+    assert result["filtered_sparse"] == 2
+    assert "https://no-method reason=no method or result information_score=2" in caplog.text
+
+
+def test_existing_daily_selection_is_not_rewritten(storage: Storage):
+    _add_analysis(storage, "https://old-sparse", summary=_sparse_summary())
+    start, end = daily_period(REPORT_DATE)
+    original, _ = storage.create_report(
+        "daily", start, end, storage.get_report_candidates(start, end, min_score=7)
+    )
+    result = generate_daily_report(storage, Config(sources=[], keywords=[]), REPORT_DATE)
+    assert result["created"] is False
+    assert result["qualified"] == 0
+    assert result["filtered_sparse"] == 1
+    assert result["selected"] == 1  # Existing selection is immutable, even if sparse.
+    assert storage.get_daily_report(REPORT_DATE) == original
+
+
+def test_missing_summary_is_insufficient(storage: Storage):
+    _add_analysis(storage, "https://no-summary", summarized=False)
+    assert not has_sufficient_information(storage.get_ai4s_analysis("https://no-summary"))

@@ -3,6 +3,10 @@ from collections import Counter
 from datetime import date, datetime, time, timezone
 
 from src.config import Config
+from src.information_sufficiency import (
+    information_score,
+    insufficient_information_reason,
+)
 from src.models import AI4SAnalysis, Report
 from src.source_info import source_info
 from src.storage import Storage
@@ -28,17 +32,38 @@ def generate_daily_report(
         period_end,
         min_score=cfg.score_threshold,
     )
+    qualified = []
+    sparse = []
+    for candidate in candidates:
+        reason = insufficient_information_reason(candidate)
+        if reason is None:
+            qualified.append(candidate)
+        else:
+            sparse.append((candidate, reason))
     existing = storage.get_report_by_period("daily", period_start, period_end)
     if existing is not None:
-        result = _metrics(existing, len(candidates), created=False)
+        # Qualification metrics describe current candidates, not a rewrite of
+        # the already persisted selection (which may predate this rule).
+        result = _metrics(existing, len(candidates), len(qualified), created=False)
+        logger.info("existing Daily report reused; information filter not applied")
         _log_source_diversity(existing)
         return result
 
-    selected = select_daily_candidates(candidates, cfg.top_n)
+    for candidate, reason in sparse:
+        logger.info(
+            "filtered sparse: %s reason=%s information_score=%d",
+            candidate.item.title, reason, information_score(candidate),
+        )
+    selected = select_daily_candidates(qualified, cfg.top_n)
     report, created = storage.create_report(
         "daily", period_start, period_end, selected
     )
-    result = _metrics(report, len(candidates), created=created)
+    result = _metrics(report, len(candidates), len(qualified), created=created)
+    logger.info(
+        "Daily information filter: candidates=%d qualified=%d filtered_sparse=%d selected=%d",
+        result["candidates"], result["qualified"], result["filtered_sparse"],
+        result["selected"],
+    )
     logger.info(
         "daily report: period=%s candidates=%d selected=%d report_id=%d created=%s",
         report_date.isoformat(),
@@ -101,11 +126,15 @@ def _log_source_diversity(report: Report) -> None:
         logger.info("daily source: %s=%d", name, count)
 
 
-def _metrics(report: Report, candidates: int, *, created: bool) -> dict[str, object]:
+def _metrics(
+    report: Report, candidates: int, qualified: int, *, created: bool
+) -> dict[str, object]:
     source_counts, families = _source_diversity(report)
     return {
         "period": report.period_start.date().isoformat(),
         "candidates": candidates,
+        "qualified": qualified,
+        "filtered_sparse": candidates - qualified,
         "selected": len(report.items),
         "categories": sorted({item.category for item in report.items}),
         "unique_sources": len(source_counts),
