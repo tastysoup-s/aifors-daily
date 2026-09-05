@@ -6,6 +6,8 @@ from src.config import Config
 from src.information_sufficiency import (
     information_score,
     insufficient_information_reason,
+    recommendation_quality_tier,
+    recommendation_sort_key,
 )
 from src.models import AI4SAnalysis, Report
 from src.source_info import source_info
@@ -79,14 +81,18 @@ def generate_daily_report(
 def select_daily_candidates(
     candidates: list[AI4SAnalysis], limit: int
 ) -> list[AI4SAnalysis]:
-    """Preserve score ordering while diversifying candidates within exact ties."""
+    """Rank for information quality, then diversify exact quality ties."""
+    candidates = sorted(candidates, key=recommendation_sort_key, reverse=True)
     selected: list[AI4SAnalysis] = []
     family_counts: Counter[str] = Counter()
     start = 0
     while start < len(candidates) and len(selected) < limit:
-        score = candidates[start].analyzer.score
+        tier_key = recommendation_quality_tier(candidates[start])
         end = start
-        while end < len(candidates) and candidates[end].analyzer.score == score:
+        while (
+            end < len(candidates)
+            and recommendation_quality_tier(candidates[end]) == tier_key
+        ):
             end += 1
         tier = list(candidates[start:end])
         while tier and len(selected) < limit:

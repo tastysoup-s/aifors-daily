@@ -332,37 +332,42 @@ def test_expanded_title_only_weather_summary_is_still_sparse(storage: Storage):
             "原文未说明。标题仅称其为最先进、最准确，"
             "未具体说明相对已有方法的新颖之处。"
         ),
+        scientific_significance="原文未说明。",
     )
     _add_analysis(storage, "https://WeatherNext-expanded", summary=summary)
     analysis = storage.get_ai4s_analysis("https://WeatherNext-expanded")
     assert information_score(analysis) == 0
-    assert insufficient_information_reason(analysis) == "insufficient factual fields"
+    assert "missing required fields" in insufficient_information_reason(analysis)
 
 
 @pytest.mark.parametrize("facts, expected_score, reason", [
-    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "原文未说明"),
-     0, "insufficient factual fields"),
-    (("原子间相互作用", "E(3)-等变神经网络", "原文未说明", "等变原子间势"),
-     3, None),
-    (("研究问题", "信息不足", "信息不足", "创新点"), 2, "no method or result"),
-    (("信息不足", "方法", "结果", "信息不足"), 2, None),
-    (("信息不足", "方法", "信息不足", "信息不足"), 1, "insufficient factual fields"),
+    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "原文未说明", "信息不足"),
+     0, "missing required fields"),
+    (("原子间相互作用", "E(3)-等变神经网络", "原文未说明", "等变原子间势", "支持原子模拟"),
+     4, None),
+    (("研究问题", "方法", "信息不足", "创新点", "信息不足"),
+     3, "missing required fields"),
+    (("研究问题", "方法", "结果", "创新点", "科研意义"), 5, None),
+    (("研究问题", "方法", "信息不足", "创新点", "科研意义"), 4, None),
 ])
-def test_information_rule_uses_only_four_factual_fields(
+def test_information_rule_requires_problem_method_innovation_and_significance(
     storage: Storage, facts, expected_score, reason
 ):
     summary = replace(
         _summary(),
         scientific_problem=facts[0], ai_method=facts[1],
         main_result=facts[2], innovation=facts[3],
+        scientific_significance=facts[4],
         assessment="很长的分析研判" * 1000,
-        scientific_significance="丰富科学意义" * 1000,
         resources="https://example.org/paper",
     )
     _add_analysis(storage, "https://facts", summary=summary)
     analysis = storage.get_ai4s_analysis("https://facts")
     assert information_score(analysis) == expected_score
-    assert insufficient_information_reason(analysis) == reason
+    actual_reason = insufficient_information_reason(analysis)
+    assert (actual_reason is None) is (reason is None)
+    if reason is not None:
+        assert actual_reason.startswith(reason)
     assert has_sufficient_information(analysis) is (reason is None)
     analysis.item.content = "正文宣传" * 3000
     assert information_score(analysis) == expected_score
@@ -398,7 +403,7 @@ def test_daily_never_refills_sparse_items_and_preserves_database(
     for table, rows in before.items():
         assert connection.execute(f"SELECT * FROM {table}").fetchall() == rows
     assert f"qualified={qualified_count} filtered_sparse=1 selected={qualified_count}" in caplog.text
-    assert "https://WeatherNext reason=insufficient factual fields information_score=0" in caplog.text
+    assert "https://WeatherNext reason=missing required fields:" in caplog.text
     rendered = render_ai4s_site(storage, output_dir=tmp_path / "site")
     assert rendered["daily_items"] == qualified_count
     assert (tmp_path / "site" / "index.html").is_file()
@@ -421,7 +426,27 @@ def test_filter_runs_before_top_n_and_source_diversity(storage: Storage, caplog)
     ]
     assert result["qualified"] == 4
     assert result["filtered_sparse"] == 2
-    assert "https://no-method reason=no method or result information_score=2" in caplog.text
+    assert "https://no-method reason=missing required fields: ai_method" in caplog.text
+
+
+def test_daily_globally_prioritizes_assessment_then_optional_result(storage: Storage):
+    assessed = replace(_summary(), assessment="该方法具有明确科研价值。仍需验证跨体系泛化边界。")
+    no_result = replace(assessed, main_result="原文未披露明确量化结果。")
+    _add_analysis(storage, "https://unassessed-high", score=10)
+    _add_analysis(storage, "https://assessed-result", score=8, summary=assessed)
+    _add_analysis(storage, "https://assessed-no-result", score=8, summary=no_result)
+
+    generate_daily_report(
+        storage, Config(sources=[], keywords=[], top_n=3), REPORT_DATE
+    )
+
+    assert [
+        item.analysis.item.url for item in storage.get_daily_report(REPORT_DATE).items
+    ] == [
+        "https://assessed-result",
+        "https://assessed-no-result",
+        "https://unassessed-high",
+    ]
 
 
 def test_existing_daily_selection_is_not_rewritten(storage: Storage):

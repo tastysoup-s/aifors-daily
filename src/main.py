@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 from src.ai4s_analyzer import run_ai4s_analyze
 from src.ai4s_daily import generate_daily_report
 from src.ai4s_summarizer import run_ai4s_summarize
+from src.ai4s_summary_enrichment import (
+    MAX_ENRICHMENT_ITEMS,
+    run_ai4s_summary_enrichment,
+)
 from src.ai4s_weekly import generate_weekly_report, latest_weekly_report_date
 from src.config import load_config
 from src.dedup import dedup_by_url
@@ -88,6 +92,21 @@ async def run_ai4s_summarize_cmd(
     storage.init()
     try:
         return await run_ai4s_summarize(storage, config, limit=limit)
+    finally:
+        storage.close()
+
+
+async def run_ai4s_summary_enrichment_cmd(
+    sources_path: Path = Path("config/sources.yaml"),
+    preferences_path: Path = Path("config/preferences.yaml"),
+    db_path: Path = Path("data/ai_daily.db"),
+    limit: int = MAX_ENRICHMENT_ITEMS,
+) -> dict[str, int | float]:
+    config = load_config(sources_path=sources_path, preferences_path=preferences_path)
+    storage = Storage(db_path)
+    storage.init()
+    try:
+        return await run_ai4s_summary_enrichment(storage, config, limit=limit)
     finally:
         storage.close()
 
@@ -177,6 +196,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         ("analyze", "Classify and score unanalyzed items for AI4S"),
         ("summarize", "Score unscored items and summarize the top-N"),
         ("summarize-ai4s", "Summarize high-scoring AI4S analyses"),
+        ("enrich-ai4s-summaries", "Enrich recent legacy AI4S summaries"),
         ("generate-daily", "Generate a persisted AI4S daily report"),
         ("generate-weekly", "Generate a persisted AI4S weekly report"),
         ("render-ai4s", "Render persisted AI4S reports to site/index.html"),
@@ -188,6 +208,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         p.add_argument("--db", default="data/ai_daily.db")
         if name in ("analyze", "summarize-ai4s"):
             p.add_argument("--limit", type=_positive_int)
+        if name == "enrich-ai4s-summaries":
+            p.add_argument("--limit", type=_enrichment_limit, default=MAX_ENRICHMENT_ITEMS)
         if name in ("generate-daily", "generate-weekly"):
             date_type = _weekly_date if name == "generate-weekly" else _iso_date
             p.add_argument("--report-date", type=date_type)
@@ -203,6 +225,15 @@ def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def _enrichment_limit(value: str) -> int:
+    parsed = _positive_int(value)
+    if parsed > MAX_ENRICHMENT_ITEMS:
+        raise argparse.ArgumentTypeError(
+            f"must not exceed {MAX_ENRICHMENT_ITEMS}"
+        )
     return parsed
 
 
@@ -255,6 +286,19 @@ def main(argv: list[str] | None = None) -> int:
             db_path=Path(args.db),
             limit=args.limit,
         ))
+        return 0
+    if args.command == "enrich-ai4s-summaries":
+        result = asyncio.run(run_ai4s_summary_enrichment_cmd(
+            sources_path=Path(args.sources),
+            preferences_path=Path(args.preferences),
+            db_path=Path(args.db),
+            limit=args.limit,
+        ))
+        print(
+            f"candidates={result['candidates']} selected={result['selected']} "
+            f"enriched={result['enriched']} qualified_after={result['qualified_after']} "
+            f"errors={result['errors']} cost=${result['cost_usd']:.6f}"
+        )
         return 0
     if args.command == "generate-daily":
         result = run_generate_daily_cmd(

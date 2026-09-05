@@ -24,7 +24,7 @@ def test_workflow_uses_one_production_database_path():
     assert "AI4S_DB: data/ai4s.db" in text
     assert "data/ai4s_dev.db" not in text
     assert "data/ai_daily.db" not in text
-    assert text.count('--db "$AI4S_DB"') == 7
+    assert text.count('--db "$AI4S_DB"') == 8
 
 
 def test_workflow_pipeline_order_is_safe():
@@ -81,3 +81,20 @@ def test_render_only_publish_skips_every_fetch_and_llm_stage():
     refresh = next(step for step in steps if "src.refresh_reports" in step.get("run", ""))
     assert refresh["if"] == "${{ inputs.render_only }}"
     assert "DEEPSEEK_API_KEY" not in refresh.get("env", {})
+
+
+def test_manual_summary_enrichment_is_capped_and_disabled_by_default():
+    workflow = yaml.load(_workflow_text(), Loader=yaml.BaseLoader)
+    inputs = workflow["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["summary_enrichment_limit"]["default"] == "0"
+    steps = workflow["jobs"]["publish"]["steps"]
+    enrichment = next(
+        step for step in steps if "enrich-ai4s-summaries" in step.get("run", "")
+    )
+    assert enrichment["if"] == (
+        "${{ inputs.render_only && inputs.summary_enrichment_limit > 0 }}"
+    )
+    assert enrichment["env"] == {
+        "DEEPSEEK_API_KEY": "${{ secrets.DEEPSEEK_API_KEY }}"
+    }
+    assert '--limit "${{ inputs.summary_enrichment_limit }}"' in enrichment["run"]

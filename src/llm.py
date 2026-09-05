@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message: str, *, cost_usd: float = 0.0):
+        super().__init__(message)
+        self.cost_usd = cost_usd
 
 
 # Map provider prefix -> env var litellm reads.
@@ -69,13 +71,16 @@ async def complete_json(
     prompt: str,
     max_tokens: int,
     temperature: float = 0.2,
+    max_attempts: int = 2,
 ) -> tuple[dict, float]:
-    """Call LLM, return (parsed_json, total_cost_usd). Retries once on bad JSON."""
+    """Call LLM and return parsed JSON plus total provider cost."""
+    if max_attempts <= 0:
+        raise ValueError("max_attempts must be greater than zero")
     total_cost = 0.0
     last_err: Exception | None = None
     last_raw: str = ""
 
-    for attempt in range(2):
+    for attempt in range(max_attempts):
         messages = [{"role": "user", "content": prompt}]
         if attempt == 1:
             messages = [
@@ -105,4 +110,7 @@ async def complete_json(
             logger.warning("LLM %s attempt %d returned unparseable JSON: %s", model, attempt + 1, e)
 
     assert last_err is not None
-    raise LLMError(f"LLM {model} produced unparseable JSON after 2 attempts: {last_err}")
+    raise LLMError(
+        f"LLM {model} produced unparseable JSON after {max_attempts} attempts: {last_err}",
+        cost_usd=total_cost,
+    )

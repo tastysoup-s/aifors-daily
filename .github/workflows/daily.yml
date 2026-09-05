@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       render_only:
-        description: Refresh saved report selections and publish without fetch or LLM calls
+        description: Refresh saved report selections and publish the persistent database
         type: boolean
         default: false
+      summary_enrichment_limit:
+        description: One-time legacy summary enrichment calls (0 disables, maximum 30)
+        type: number
+        default: 0
 
 permissions:
   contents: write
@@ -96,6 +100,12 @@ jobs:
           else
             echo "Not a Wednesday/Sunday UTC slot; skipping weekly report."
           fi
+
+      - name: Enrich recent legacy AI4S summaries
+        if: ${{ inputs.render_only && inputs.summary_enrichment_limit > 0 }}
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python -m src.main enrich-ai4s-summaries --db "$AI4S_DB" --limit "${{ inputs.summary_enrichment_limit }}"
 
       - name: Refresh saved report selections without LLM
         if: ${{ inputs.render_only }}

@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from src.ai4s_daily import select_daily_candidates
-from src.ai4s_weekly import WEEKLY_CANDIDATE_LIMIT, select_representative_works
+from src.ai4s_weekly import select_representative_works
 from src.config import Config, load_config
 from src.information_sufficiency import has_sufficient_information
 from src.storage import Storage
@@ -25,7 +25,6 @@ def refresh_report_selections(storage: Storage, cfg: Config) -> list[dict]:
                 continue
             candidates = storage.get_report_candidates(
                 report.period_start, report.period_end, min_score=cfg.score_threshold,
-                limit=WEEKLY_CANDIDATE_LIMIT if report.report_type == "weekly" else None,
             )
             qualified = [a for a in candidates if has_sufficient_information(a)]
             selected = (

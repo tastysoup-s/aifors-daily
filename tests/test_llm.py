@@ -93,6 +93,21 @@ async def test_complete_json_gives_up_after_one_retry():
     assert mock.await_count == 2
 
 
+@pytest.mark.asyncio
+async def test_complete_json_can_disable_retry_and_reports_failed_cost():
+    mock = AsyncMock(return_value=_make_mock_response("not json", 0.004))
+    with patch("src.llm.acompletion", new=mock):
+        with pytest.raises(LLMError) as error:
+            await complete_json(
+                model="anthropic/claude-haiku-4-5",
+                prompt="anything",
+                max_tokens=300,
+                max_attempts=1,
+            )
+    assert mock.await_count == 1
+    assert error.value.cost_usd == pytest.approx(0.004)
+
+
 def test_check_api_keys_anthropic_present(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

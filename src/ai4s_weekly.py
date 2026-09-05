@@ -4,7 +4,11 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 
 from src.config import Config
-from src.information_sufficiency import information_score, insufficient_information_reason
+from src.information_sufficiency import (
+    information_score,
+    insufficient_information_reason,
+    recommendation_sort_key,
+)
 from src.llm import LLMError, check_api_keys, complete_json
 from src.models import AI4S_CATEGORY_IDS, AI4SAnalysis, Report
 from src.prompts import load_prompt, render
@@ -13,9 +17,9 @@ from src.storage import Storage
 
 logger = logging.getLogger(__name__)
 
-WEEKLY_CANDIDATE_LIMIT = 30
+WEEKLY_SYNTHESIS_CANDIDATE_LIMIT = 30
 WEEKLY_REPRESENTATIVE_LIMIT = 10
-WEEKLY_REPRESENTATIVE_MIN = 5
+WEEKLY_MIN_CATEGORIES = 5
 
 
 def weekly_period(report_date: date) -> tuple[datetime, datetime]:
@@ -53,27 +57,21 @@ def select_representative_works(
                 "weekly filtered sparse: %s information_score=%d reason=%s",
                 analysis.item.title, information_score(analysis), reason,
             )
-    candidates = qualified
+    candidates = sorted(qualified, key=recommendation_sort_key, reverse=True)
     selected_urls: set[str] = set()
 
-    # Preserve at least one representative from every present category.
-    seen_categories: set[str] = set()
+    # Guarantee five domains when the qualified pool contains that many.
+    priority_categories: list[str] = []
     for analysis in candidates:
         category = analysis.analyzer.primary_category
-        if category not in seen_categories:
+        if category not in priority_categories:
+            priority_categories.append(category)
             selected_urls.add(analysis.item.url)
-            seen_categories.add(category)
-
-    # Then add a second work per category while the report has room.
-    per_category: dict[str, int] = defaultdict(int)
-    for analysis in candidates:
-        category = analysis.analyzer.primary_category
-        per_category[category] += 1
-        if per_category[category] == 2 and len(selected_urls) < WEEKLY_REPRESENTATIVE_LIMIT:
-            selected_urls.add(analysis.item.url)
+            if len(priority_categories) >= WEEKLY_MIN_CATEGORIES:
+                break
 
     for analysis in candidates:
-        if len(selected_urls) >= min(WEEKLY_REPRESENTATIVE_MIN, len(candidates)):
+        if len(selected_urls) >= WEEKLY_REPRESENTATIVE_LIMIT:
             break
         selected_urls.add(analysis.item.url)
 
@@ -158,7 +156,6 @@ async def generate_weekly_report(
         period_start,
         period_end,
         min_score=cfg.score_threshold,
-        limit=WEEKLY_CANDIDATE_LIMIT,
     )
     existing = storage.get_report_by_period("weekly", period_start, period_end)
     if existing is not None:
@@ -174,14 +171,15 @@ async def generate_weekly_report(
     if cfg.models is None:
         raise RuntimeError("preferences.yaml must define models.summarizer")
     check_api_keys(cfg.models)
+    synthesis_candidates = candidates[:WEEKLY_SYNTHESIS_CANDIDATE_LIMIT]
     data, cost_usd = await complete_json(
         model=cfg.models.summarizer,
-        prompt=_render_weekly_prompt(candidates, period_start, period_end),
+        prompt=_render_weekly_prompt(synthesis_candidates, period_start, period_end),
         max_tokens=1600,
     )
     overview, category_trends, watchlist = _validate_synthesis(
         data,
-        {analysis.analyzer.primary_category for analysis in candidates},
+        {analysis.analyzer.primary_category for analysis in synthesis_candidates},
     )
     report, created = storage.create_report(
         "weekly",

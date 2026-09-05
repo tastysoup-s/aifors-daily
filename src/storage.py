@@ -320,6 +320,74 @@ class Storage:
         ).fetchall()
         return [self._row_to_ai4s_analysis(row) for row in rows]
 
+    def get_recent_summarized_ai4s_analyses(
+        self,
+        min_score: int,
+        within_days: int = 7,
+    ) -> list[AI4SAnalysis]:
+        conn = self._conn_or_die()
+        latest = conn.execute(
+            "SELECT MAX(summarized_at) FROM ai4s_analyses"
+            " WHERE is_ai4s=1 AND score>=? AND summarized_at IS NOT NULL",
+            (min_score,),
+        ).fetchone()[0]
+        if latest is None:
+            return []
+        cutoff = (datetime.fromisoformat(latest) - timedelta(days=within_days)).isoformat()
+        rows = conn.execute(
+            "SELECT i.*,"
+            "       a.is_ai4s, a.primary_category,"
+            "       a.secondary_categories_json, a.content_type, a.score,"
+            "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
+            "       a.scientific_problem, a.ai_method, a.main_result,"
+            "       a.innovation, a.scientific_significance, a.assessment, a.resources,"
+            "       a.summarizer_model, a.summarizer_cost_usd,"
+            "       a.summarized_at, a.surfaced_at"
+            " FROM items i JOIN ai4s_analyses a ON a.url=i.url"
+            " WHERE a.is_ai4s=1 AND a.score>=? AND a.summarized_at IS NOT NULL"
+            "   AND a.summarized_at>=? AND a.summarized_at<=?"
+            " ORDER BY a.score DESC, i.published_at DESC",
+            (min_score, cutoff, latest),
+        ).fetchall()
+        return [self._row_to_ai4s_analysis(row) for row in rows]
+
+    def save_ai4s_summary_enrichment(
+        self,
+        url: str,
+        *,
+        scientific_problem: str,
+        ai_method: str,
+        main_result: str,
+        innovation: str,
+        scientific_significance: str,
+        assessment: str,
+        model: str,
+        cost_usd: float,
+    ) -> None:
+        conn = self._conn_or_die()
+        cur = conn.execute(
+            "UPDATE ai4s_analyses SET"
+            " scientific_problem=?, ai_method=?, main_result=?, innovation=?,"
+            " scientific_significance=?, assessment=?,"
+            " summarizer_model=COALESCE(NULLIF(summarizer_model, ''), ?),"
+            " summarizer_cost_usd=COALESCE(summarizer_cost_usd, 0)+?"
+            " WHERE url=? AND summarized_at IS NOT NULL",
+            (
+                scientific_problem,
+                ai_method,
+                main_result,
+                innovation,
+                scientific_significance,
+                assessment,
+                model,
+                cost_usd,
+                url,
+            ),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"no summarized AI4S analysis exists for {url}")
+        conn.commit()
+
     def get_ai4s_analysis(self, url: str) -> AI4SAnalysis | None:
         conn = self._conn_or_die()
         row = conn.execute(

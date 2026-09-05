@@ -1,11 +1,18 @@
-"""Deterministic factual-field admission rule for new Daily reports only."""
+"""Deterministic admission and ranking rules for AI4S recommendations."""
 
 import re
 
 from src.models import AI4SAnalysis
 
 
-FACTUAL_FIELDS = ("scientific_problem", "ai_method", "main_result", "innovation")
+REQUIRED_INFORMATION_FIELDS = (
+    "scientific_problem",
+    "ai_method",
+    "innovation",
+    "scientific_significance",
+)
+OPTIONAL_INFORMATION_FIELDS = ("main_result",)
+FACTUAL_FIELDS = REQUIRED_INFORMATION_FIELDS + OPTIONAL_INFORMATION_FIELDS
 LOW_INFORMATION_MARKERS = (
     "原文未说明", "原文未披露", "原文未明确", "未说明", "未披露", "未提供",
     "信息不足", "暂无足够信息", "当前来源仅提供简短介绍",
@@ -40,15 +47,34 @@ def information_score(analysis: AI4SAnalysis) -> int:
 
 
 def insufficient_information_reason(analysis: AI4SAnalysis) -> str | None:
-    if information_score(analysis) < 2:
-        return "insufficient factual fields"
-    if not (
-        is_substantive(analysis.summary.ai_method)
-        or is_substantive(analysis.summary.main_result)
-    ):
-        return "no method or result"
+    if analysis.summary is None:
+        return "missing summary"
+    missing = [
+        field
+        for field in REQUIRED_INFORMATION_FIELDS
+        if not is_substantive(getattr(analysis.summary, field))
+    ]
+    if missing:
+        return f"missing required fields: {','.join(missing)}"
     return None
 
 
 def has_sufficient_information(analysis: AI4SAnalysis) -> bool:
     return insufficient_information_reason(analysis) is None
+
+
+def has_substantive_assessment(analysis: AI4SAnalysis) -> bool:
+    return bool(analysis.summary and is_substantive(analysis.summary.assessment))
+
+
+def recommendation_quality_tier(analysis: AI4SAnalysis) -> tuple[int, int, int]:
+    """Quality tier before recency and source-diversity tie breaking."""
+    return (
+        int(has_substantive_assessment(analysis)),
+        analysis.analyzer.score,
+        int(bool(analysis.summary and is_substantive(analysis.summary.main_result))),
+    )
+
+
+def recommendation_sort_key(analysis: AI4SAnalysis) -> tuple[int, int, int, float]:
+    return (*recommendation_quality_tier(analysis), analysis.item.published_at.timestamp())

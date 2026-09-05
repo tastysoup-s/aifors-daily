@@ -7,7 +7,7 @@ import pytest
 
 from src.ai4s_daily import generate_daily_report
 from src.ai4s_weekly import (
-    WEEKLY_CANDIDATE_LIMIT,
+    WEEKLY_SYNTHESIS_CANDIDATE_LIMIT,
     generate_weekly_report,
     latest_weekly_report_date,
     select_representative_works,
@@ -212,6 +212,7 @@ def test_representatives_use_category_top_items_then_global_top():
         "https://bio-2",
         "https://material-2",
         "https://bio-3",
+        "https://bio-4",
     ]
 
 
@@ -374,7 +375,7 @@ async def test_candidate_preselection_is_capped_at_thirty(monkeypatch, tmp_path:
     storage = Storage(tmp_path / "weekly.db")
     storage.init()
     summarized_at = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    for index in range(WEEKLY_CANDIDATE_LIMIT + 2):
+    for index in range(WEEKLY_SYNTHESIS_CANDIDATE_LIMIT + 2):
         _store(storage, f"https://work-{index:02d}", summarized_at=summarized_at)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     complete = AsyncMock(return_value=(_weekly_response(), 0.001))
@@ -382,9 +383,9 @@ async def test_candidate_preselection_is_capped_at_thirty(monkeypatch, tmp_path:
 
     metrics = await generate_weekly_report(storage, _config(), date(2026, 9, 2))
 
-    assert metrics["candidates"] == WEEKLY_CANDIDATE_LIMIT
+    assert metrics["candidates"] == WEEKLY_SYNTHESIS_CANDIDATE_LIMIT + 2
     prompt = complete.await_args.kwargs["prompt"]
-    assert prompt.count('"title":') == WEEKLY_CANDIDATE_LIMIT
+    assert prompt.count('"title":') == WEEKLY_SYNTHESIS_CANDIDATE_LIMIT
     assert "RAW-CONTENT-MUST-NOT-BE-SENT" not in prompt
     storage.close()
 
@@ -426,16 +427,17 @@ def test_weekly_cli_accepts_valid_slot_and_has_db_option():
 
 
 @pytest.mark.parametrize("fields, keep", [
-    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "信息不足"), False),
-    (("问题", "信息不足", "信息不足", "创新"), False),
-    (("信息不足", "方法", "结果", "信息不足"), True),
-    (("问题", "方法", "信息不足", "创新"), True),
+    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "信息不足", "信息不足"), False),
+    (("问题", "方法", "信息不足", "创新", "信息不足"), False),
+    (("问题", "方法", "结果", "创新", "科研意义"), True),
+    (("问题", "方法", "信息不足", "创新", "科研意义"), True),
 ])
 def test_weekly_uses_exact_daily_quality_gate(fields, keep):
     analysis = _analysis("https://test")
     analysis.summary = replace(
         analysis.summary, scientific_problem=fields[0], ai_method=fields[1],
-        main_result=fields[2], innovation=fields[3], assessment="分析" * 1000,
+        main_result=fields[2], innovation=fields[3],
+        scientific_significance=fields[4], assessment="分析" * 1000,
     )
     assert has_sufficient_information(analysis) is keep
     assert select_representative_works([analysis]) == ([analysis] if keep else [])
@@ -449,7 +451,39 @@ def test_filter_precedes_representative_ranking_and_logs(caplog):
     with caplog.at_level("INFO"):
         assert select_representative_works([sparse, *qualified]) == qualified
     assert "candidates=4 qualified=3 filtered_sparse=1 selected=3" in caplog.text
-    assert "information_score=0 reason=insufficient factual fields" in caplog.text
+    assert "information_score=1 reason=missing required fields:" in caplog.text
+
+
+def test_weekly_guarantees_five_domains_before_global_quality_fill():
+    candidates = [
+        _analysis(f"https://biology-{index}", category="biology", score=10 - index)
+        for index in range(6)
+    ] + [
+        _analysis("https://medicine", category="medicine", score=7),
+        _analysis("https://chemistry", category="chemistry", score=7),
+        _analysis("https://materials", category="materials", score=7),
+        _analysis("https://physics", category="physics", score=7),
+    ]
+
+    selected = select_representative_works(candidates)
+
+    assert len(selected) == 10
+    assert {item.analyzer.primary_category for item in selected} == {
+        "biology", "medicine", "chemistry", "materials", "physics",
+    }
+
+
+def test_weekly_globally_prioritizes_assessed_items():
+    assessed = _analysis("https://assessed", score=7)
+    assessed.summary = replace(
+        assessed.summary,
+        assessment="该工作对科研流程有明确价值。仍需验证适用范围与泛化能力。",
+    )
+    unassessed = _analysis("https://unassessed", score=10)
+
+    assert select_representative_works([unassessed, assessed]) == [
+        assessed, unassessed,
+    ]
 
 
 @pytest.mark.asyncio
