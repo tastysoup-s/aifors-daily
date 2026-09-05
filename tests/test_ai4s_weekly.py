@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -16,6 +17,9 @@ from src.config import Config, Models
 from src.llm import LLMError
 from src.main import _parse_args
 from src.models import AI4SAnalysis, AI4SSummary, AnalyzerResult, Item
+from src.information_sufficiency import has_sufficient_information
+from src.notifier.ai4s_web import render_ai4s_site
+from src.refresh_reports import refresh_report_selections
 from src.storage import Storage
 
 
@@ -419,3 +423,103 @@ def test_weekly_cli_accepts_valid_slot_and_has_db_option():
 
     assert args.db == "data/ai4s_dev.db"
     assert args.report_date == date(2026, 9, 6)
+
+
+@pytest.mark.parametrize("fields, keep", [
+    (("原文未说明", "原文未说明", "原文未披露明确量化结果", "信息不足"), False),
+    (("问题", "信息不足", "信息不足", "创新"), False),
+    (("信息不足", "方法", "结果", "信息不足"), True),
+    (("问题", "方法", "信息不足", "创新"), True),
+])
+def test_weekly_uses_exact_daily_quality_gate(fields, keep):
+    analysis = _analysis("https://test")
+    analysis.summary = replace(
+        analysis.summary, scientific_problem=fields[0], ai_method=fields[1],
+        main_result=fields[2], innovation=fields[3], assessment="分析" * 1000,
+    )
+    assert has_sufficient_information(analysis) is keep
+    assert select_representative_works([analysis]) == ([analysis] if keep else [])
+
+
+def test_filter_precedes_representative_ranking_and_logs(caplog):
+    sparse = _analysis("https://WeatherNext", category="earth", score=10)
+    sparse.summary = replace(_summary(), scientific_problem="原文未说明",
+                             ai_method="信息不足", main_result="信息不足", innovation="信息不足")
+    qualified = [_analysis(f"https://work-{i}") for i in range(3)]
+    with caplog.at_level("INFO"):
+        assert select_representative_works([sparse, *qualified]) == qualified
+    assert "candidates=4 qualified=3 filtered_sparse=1 selected=3" in caplog.text
+    assert "information_score=0 reason=insufficient factual fields" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("all_sparse", [False, True])
+async def test_sparse_representatives_do_not_change_synthesis_input_or_output(
+    monkeypatch, tmp_path, all_sparse
+):
+    storage = Storage(tmp_path / "weekly.db")
+    storage.init()
+    when = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    _store(storage, "https://sparse", summarized_at=when)
+    conn = storage._conn_or_die()
+    conn.execute("UPDATE ai4s_analyses SET scientific_problem=?,ai_method=?,main_result=?,innovation=?",
+                 ("原文未说明",) * 4)
+    conn.commit()
+    if not all_sparse:
+        _store(storage, "https://rich", summarized_at=when)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    complete = AsyncMock(return_value=(_weekly_response(), 0.002))
+    monkeypatch.setattr("src.ai4s_weekly.complete_json", complete)
+    metrics = await generate_weekly_report(storage, _config(), date(2026, 9, 2))
+    report = storage.get_latest_weekly_report()
+    assert metrics["representatives"] == (0 if all_sparse else 1)
+    assert "https://sparse" in complete.await_args.kwargs["prompt"]
+    assert report.overview == _weekly_response()["overview"]
+    assert report.category_trends == _weekly_response()["category_trends"]
+    assert report.watchlist == _weekly_response()["watchlist"]
+    assert render_ai4s_site(storage, output_dir=tmp_path / "site")["weekly_items"] == len(report.items)
+    storage.close()
+
+
+def test_offline_refresh_preserves_synthesis_articles_and_other_reports(monkeypatch, tmp_path):
+    storage = Storage(tmp_path / "legacy.db")
+    storage.init()
+    when = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    for url in ("https://rich", "https://sparse"):
+        _store(storage, url, summarized_at=when)
+    conn = storage._conn_or_die()
+    conn.execute("UPDATE ai4s_analyses SET scientific_problem=?,ai_method=?,main_result=?,innovation=? WHERE url=?",
+                 ("原文未说明",) * 4 + ("https://sparse",))
+    conn.commit()
+    start, end = weekly_period(date(2026, 9, 2))
+    candidates = storage.get_report_candidates(start, end, min_score=7)
+    storage.create_report("weekly", start, end, candidates, **_weekly_response(), model="saved", cost_usd=0.1)
+    older, _ = storage.create_report("weekly", start - timedelta(days=7), end - timedelta(days=7), candidates)
+    older_items = storage.get_report_items(older.id)
+    original = {table: conn.execute(f"SELECT * FROM {table}").fetchall()
+                for table in ("items", "ai4s_analyses", "reports")}
+    complete = AsyncMock(side_effect=AssertionError("Offline refresh must not call LLM"))
+    monkeypatch.setattr("src.ai4s_weekly.complete_json", complete)
+    result = refresh_report_selections(storage, _config())
+    assert result[0]["before"] == 2 and result[0]["selected"] == 1
+    assert result[0]["filtered_sparse"] == 1
+    for table, rows in original.items():
+        assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+    assert storage.get_report_items(older.id) == older_items
+    assert refresh_report_selections(storage, _config())[0]["changed"] is False
+    assert complete.await_count == 0
+    storage.close()
+
+
+def test_offline_refresh_on_legacy_db_without_assessment(tmp_path):
+    storage = Storage(tmp_path / "old.db")
+    storage.init()
+    _store(storage, "https://rich", summarized_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+    start, end = weekly_period(date(2026, 9, 2))
+    storage.create_report("weekly", start, end, storage.get_report_candidates(start, end, min_score=7))
+    storage._conn_or_die().execute("ALTER TABLE ai4s_analyses DROP COLUMN assessment")
+    storage._conn_or_die().commit()
+    storage.close()
+    storage.init()  # Reuse the already existing compatibility migration.
+    assert refresh_report_selections(storage, _config())[0]["selected"] == 1
+    storage.close()

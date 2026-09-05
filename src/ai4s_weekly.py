@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 
 from src.config import Config
+from src.information_sufficiency import information_score, insufficient_information_reason
 from src.llm import LLMError, check_api_keys, complete_json
 from src.models import AI4S_CATEGORY_IDS, AI4SAnalysis, Report
 from src.prompts import load_prompt, render
@@ -41,6 +42,18 @@ def latest_weekly_report_date(current_date: date) -> date:
 def select_representative_works(
     candidates: list[AI4SAnalysis],
 ) -> list[AI4SAnalysis]:
+    candidate_count = len(candidates)
+    qualified = []
+    for analysis in candidates:
+        reason = insufficient_information_reason(analysis)
+        if reason is None:
+            qualified.append(analysis)
+        else:
+            logger.info(
+                "weekly filtered sparse: %s information_score=%d reason=%s",
+                analysis.item.title, information_score(analysis), reason,
+            )
+    candidates = qualified
     selected_urls: set[str] = set()
 
     # Preserve at least one representative from every present category.
@@ -64,9 +77,15 @@ def select_representative_works(
             break
         selected_urls.add(analysis.item.url)
 
-    return [
+    selected = [
         analysis for analysis in candidates if analysis.item.url in selected_urls
     ][:WEEKLY_REPRESENTATIVE_LIMIT]
+    logger.info(
+        "Weekly representative information filter: candidates=%d qualified=%d "
+        "filtered_sparse=%d selected=%d",
+        candidate_count, len(qualified), candidate_count - len(qualified), len(selected),
+    )
+    return selected
 
 
 def _render_weekly_prompt(

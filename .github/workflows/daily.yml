@@ -5,6 +5,11 @@ on:
     # Report periods and slot decisions use UTC throughout the application.
     - cron: "30 0 * * *"
   workflow_dispatch:
+    inputs:
+      render_only:
+        description: Refresh saved report selections and publish without fetch or LLM calls
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -59,24 +64,29 @@ jobs:
           fi
 
       - name: Fetch sources
+        if: ${{ !inputs.render_only }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m src.main fetch --db "$AI4S_DB"
 
       - name: Analyze AI4S items
+        if: ${{ !inputs.render_only }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python -m src.main analyze --db "$AI4S_DB"
 
       - name: Summarize high-scoring AI4S items
+        if: ${{ !inputs.render_only }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: python -m src.main summarize-ai4s --db "$AI4S_DB"
 
       - name: Generate daily report
+        if: ${{ !inputs.render_only }}
         run: python -m src.main generate-daily --db "$AI4S_DB" --report-date "$(date -u +%F)"
 
       - name: Generate Wednesday or Sunday weekly report
+        if: ${{ !inputs.render_only }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
@@ -86,6 +96,10 @@ jobs:
           else
             echo "Not a Wednesday/Sunday UTC slot; skipping weekly report."
           fi
+
+      - name: Refresh saved report selections without LLM
+        if: ${{ inputs.render_only }}
+        run: python -m src.refresh_reports --db "$AI4S_DB"
 
       - name: Render AI4S reports
         run: |

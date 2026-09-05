@@ -24,7 +24,7 @@ def test_workflow_uses_one_production_database_path():
     assert "AI4S_DB: data/ai4s.db" in text
     assert "data/ai4s_dev.db" not in text
     assert "data/ai_daily.db" not in text
-    assert text.count('--db "$AI4S_DB"') == 6
+    assert text.count('--db "$AI4S_DB"') == 7
 
 
 def test_workflow_pipeline_order_is_safe():
@@ -67,3 +67,17 @@ def test_workflow_uses_only_required_secrets_and_data_branch_persistence():
     assert "origin data" in text
     assert "data-branch/data/ai4s.db" in text
     assert "git add data/ai4s.db docs" in text
+
+
+def test_render_only_publish_skips_every_fetch_and_llm_stage():
+    workflow = yaml.load(_workflow_text(), Loader=yaml.BaseLoader)
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["render_only"]["default"] == "false"
+    steps = workflow["jobs"]["publish"]["steps"]
+    for step in steps:
+        if any(f"src.main {command}" in step.get("run", "") for command in (
+            "fetch", "analyze", "summarize-ai4s", "generate-daily", "generate-weekly"
+        )):
+            assert step["if"] == "${{ !inputs.render_only }}"
+    refresh = next(step for step in steps if "src.refresh_reports" in step.get("run", ""))
+    assert refresh["if"] == "${{ inputs.render_only }}"
+    assert "DEEPSEEK_API_KEY" not in refresh.get("env", {})
