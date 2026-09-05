@@ -136,6 +136,7 @@ class AI4SSummary:
     resources: str
     model: str
     cost_usd: float
+    assessment: str | None = None
 
     def __post_init__(self) -> None:
         content_fields = (
@@ -148,6 +149,8 @@ class AI4SSummary:
         )
         if any(not isinstance(getattr(self, name), str) for name in content_fields):
             raise ValueError("AI4SSummary content fields must be strings")
+        if self.assessment is not None and not isinstance(self.assessment, str):
+            raise ValueError("AI4SSummary assessment must be a string or None")
         if not isinstance(self.model, str) or not self.model:
             raise ValueError("AI4SSummary model must be a non-empty string")
         if (

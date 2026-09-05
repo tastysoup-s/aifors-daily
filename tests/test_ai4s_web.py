@@ -27,7 +27,7 @@ def _store_analysis(
     content_type: str = "paper",
     score: int = 8,
     source: str = "test-source",
-    summary_values: dict[str, str] | None = None,
+    summary_values: dict[str, str | None] | None = None,
     raw: dict | None = None,
 ) -> AI4SAnalysis:
     item = Item(
@@ -54,6 +54,7 @@ def _store_analysis(
         "main_result": "获得可验证的主要结果。",
         "innovation": "连接数据驱动方法与物理机制。",
         "scientific_significance": "减少候选实验范围。",
+        "assessment": "该工作的价值在于把数据驱动筛选与物理约束结合；当前结果支持缩小候选范围，但还不足以替代后续实验验证。",
         "resources": "https://example.com/code",
     }
     values.update(summary_values or {})
@@ -137,8 +138,10 @@ def test_render_with_daily_and_weekly_uses_report_layer_fields(tmp_path: Path):
     assert result["weekly_items"] == 2
     assert "AI4S Daily" in html
     assert "Daily" in html and "Weekly" in html
-    for label in ("科学问题", "AI 方法", "主要结果", "创新点", "科研意义", "科研资源"):
+    for label in ("工作概述", "分析研判", "科研资源"):
         assert label in html
+    for label in ("科学问题", "AI 方法", "创新点", "科研意义"):
+        assert f"<h4>{label}</h4>" not in html
     assert "本期概览" in html
     assert "领域趋势" in html
     assert "持续关注" in html
@@ -499,7 +502,7 @@ def test_real_scientific_summary_text_is_informative():
     assert is_informative_summary_text("模型将病理切片推理速度提高了三倍。") is True
 
 
-def test_daily_hides_uninformative_fields_without_empty_headings(tmp_path: Path):
+def test_daily_compacts_facts_into_overview_and_hides_uninformative_result(tmp_path: Path):
     storage = Storage(tmp_path / "reports.db")
     storage.init()
     analysis = _store_analysis(
@@ -522,9 +525,13 @@ def test_daily_hides_uninformative_fields_without_empty_headings(tmp_path: Path)
         (output_dir / "index.html").read_text(encoding="utf-8"),
         "Daily Informative Card",
     )
+    assert card.count("<h4>工作概述</h4>") == 1
+    assert card.count("<h4>分析研判</h4>") == 1
+    assert "<strong>问题</strong>" in card
+    assert "<strong>方法</strong>" in card
+    assert "<strong>结果</strong>" not in card
     for label in ("科学问题", "AI 方法", "创新点", "科研意义"):
-        assert f"<h4>{label}</h4>" in card
-    assert "<h4>主要结果</h4>" not in card
+        assert f"<h4>{label}</h4>" not in card
     assert "<h4>科研资源</h4>" not in card
     assert "原文未披露明确量化结果" not in card
 
@@ -538,11 +545,12 @@ def test_daily_low_information_uses_one_fallback_and_keeps_resources(tmp_path: P
         title="Daily Limited Card",
         category="general",
         summary_values={
-            "scientific_problem": "仅有一个有效科学问题。",
+            "scientific_problem": "原文未说明。",
             "ai_method": "原文未说明。",
             "main_result": "原文未披露明确量化结果。",
             "innovation": "未说明。",
             "scientific_significance": "未披露。",
+            "assessment": None,
             "resources": "https://example.com/paper",
         },
     )
@@ -561,6 +569,31 @@ def test_daily_low_information_uses_one_fallback_and_keeps_resources(tmp_path: P
     assert "<h4>科学问题</h4>" not in card
     assert "<h4>科研资源</h4>" in card
     assert "https://example.com/paper" in card
+
+
+def test_daily_old_summary_without_assessment_still_renders(tmp_path: Path):
+    storage = Storage(tmp_path / "reports.db")
+    storage.init()
+    analysis = _store_analysis(
+        storage,
+        "https://example.com/legacy-summary",
+        title="Legacy Summary Card",
+        category="biology",
+        summary_values={"assessment": None},
+    )
+    start, end = daily_period(date(2026, 9, 3))
+    storage.create_report("daily", start, end, [analysis])
+    output_dir = tmp_path / "site"
+    render_ai4s_site(storage, output_dir=output_dir)
+    storage.close()
+
+    card = _card_for(
+        (output_dir / "index.html").read_text(encoding="utf-8"),
+        "Legacy Summary Card",
+    )
+    assert "<h4>工作概述</h4>" in card
+    assert "分析研判" not in card
+    assert 'aria-label="历史摘要补充"' in card
 
 
 def test_weekly_cards_map_fields_hide_no_result_and_suppress_duplicates(tmp_path: Path):
@@ -590,6 +623,7 @@ def test_weekly_cards_map_fields_hide_no_result_and_suppress_duplicates(tmp_path
             "main_result": "未披露。",
             "innovation": "相同的方法亮点",
             "scientific_significance": "未说明。",
+            "assessment": None,
         },
     )
     limited = _store_analysis(
@@ -603,6 +637,7 @@ def test_weekly_cards_map_fields_hide_no_result_and_suppress_duplicates(tmp_path
             "main_result": "原文未披露明确量化结果。",
             "innovation": "未说明。",
             "scientific_significance": "未披露。",
+            "assessment": None,
             "resources": "未提供额外科研资源。",
         },
     )

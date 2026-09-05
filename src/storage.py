@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS ai4s_analyses (
     main_result TEXT,
     innovation TEXT,
     scientific_significance TEXT,
+    assessment TEXT,
     resources TEXT,
     summarizer_model TEXT,
     summarizer_cost_usd REAL,
@@ -126,6 +127,7 @@ class Storage:
         # pre-existing table, add it and backfill from created_at so existing
         # rows are treated as already archived (not "new today").
         self._migrate_add_surfaced_at()
+        self._migrate_add_ai4s_assessment()
         self._conn.commit()
 
     def _migrate_add_surfaced_at(self) -> None:
@@ -142,6 +144,12 @@ class Storage:
             "CREATE INDEX IF NOT EXISTS idx_summaries_surfaced_at"
             " ON summaries(surfaced_at)"
         )
+
+    def _migrate_add_ai4s_assessment(self) -> None:
+        assert self._conn is not None
+        columns = self._conn.execute("PRAGMA table_info(ai4s_analyses)").fetchall()
+        if "assessment" not in {column[1] for column in columns}:
+            self._conn.execute("ALTER TABLE ai4s_analyses ADD COLUMN assessment TEXT")
 
     def close(self) -> None:
         if self._conn is not None:
@@ -266,7 +274,7 @@ class Storage:
         cur = conn.execute(
             "UPDATE ai4s_analyses SET"
             "  scientific_problem=?, ai_method=?, main_result=?, innovation=?,"
-            "  scientific_significance=?, resources=?, summarizer_model=?,"
+            "  scientific_significance=?, assessment=?, resources=?, summarizer_model=?,"
             "  summarizer_cost_usd=?, summarized_at=?"
             " WHERE url=?",
             (
@@ -275,6 +283,7 @@ class Storage:
                 summary.main_result,
                 summary.innovation,
                 summary.scientific_significance,
+                summary.assessment,
                 summary.resources,
                 summary.model,
                 summary.cost_usd,
@@ -300,7 +309,7 @@ class Storage:
             "       a.secondary_categories_json, a.content_type, a.score,"
             "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
             "       a.scientific_problem, a.ai_method, a.main_result,"
-            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.innovation, a.scientific_significance, a.assessment, a.resources,"
             "       a.summarizer_model, a.summarizer_cost_usd,"
             "       a.summarized_at, a.surfaced_at"
             " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
@@ -319,7 +328,7 @@ class Storage:
             "       a.secondary_categories_json, a.content_type, a.score,"
             "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
             "       a.scientific_problem, a.ai_method, a.main_result,"
-            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.innovation, a.scientific_significance, a.assessment, a.resources,"
             "       a.summarizer_model, a.summarizer_cost_usd,"
             "       a.summarized_at, a.surfaced_at"
             " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
@@ -344,7 +353,7 @@ class Storage:
             "       a.secondary_categories_json, a.content_type, a.score,"
             "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
             "       a.scientific_problem, a.ai_method, a.main_result,"
-            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.innovation, a.scientific_significance, a.assessment, a.resources,"
             "       a.summarizer_model, a.summarizer_cost_usd,"
             "       a.summarized_at, a.surfaced_at"
             " FROM items i JOIN ai4s_analyses a ON a.url = i.url"
@@ -460,7 +469,7 @@ class Storage:
             "       a.secondary_categories_json, a.content_type, a.score,"
             "       a.tags_json, a.analyzer_model, a.analyzer_cost_usd,"
             "       a.scientific_problem, a.ai_method, a.main_result,"
-            "       a.innovation, a.scientific_significance, a.resources,"
+            "       a.innovation, a.scientific_significance, a.assessment, a.resources,"
             "       a.summarizer_model, a.summarizer_cost_usd,"
             "       a.summarized_at, a.surfaced_at,"
             "       ri.rank report_rank, ri.category report_category,"
@@ -659,6 +668,7 @@ class Storage:
                 resources=row["resources"],
                 model=row["summarizer_model"] or "",
                 cost_usd=row["summarizer_cost_usd"] or 0.0,
+                assessment=row["assessment"],
             )
         surfaced_at = (
             datetime.fromisoformat(row["surfaced_at"])

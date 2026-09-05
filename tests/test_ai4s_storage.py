@@ -44,6 +44,7 @@ def _summary() -> AI4SSummary:
         resources="https://example.com/code",
         model="test-summarizer",
         cost_usd=0.002,
+        assessment="The evidence supports the reported result but not broad generalization.",
     )
 
 
@@ -147,7 +148,53 @@ def test_save_and_load_ai4s_summary(tmp_path: Path):
     assert analysis is not None
     assert analysis.summary is not None
     assert analysis.summary.scientific_problem == "Predict protein structure."
+    assert analysis.summary.assessment.startswith("The evidence supports")
     assert analysis.total_cost_usd == pytest.approx(0.003)
+    storage.close()
+
+
+def test_existing_ai4s_database_gains_nullable_assessment(tmp_path: Path):
+    db_path = tmp_path / "old-ai4s.db"
+    storage = Storage(db_path)
+    storage.init()
+    storage._conn_or_die().execute(
+        "INSERT INTO items"
+        " (url, title, content, source, published_at, raw_json, first_seen)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "https://legacy-ai4s",
+            "Legacy AI4S summary",
+            "legacy content",
+            "arxiv:test",
+            "2026-09-01T00:00:00+00:00",
+            "{}",
+            "2026-09-01T00:00:00+00:00",
+        ),
+    )
+    storage.save_analyzer_result("https://legacy-ai4s", _result())
+    storage.save_ai4s_summary("https://legacy-ai4s", _summary())
+    storage._conn_or_die().execute("UPDATE ai4s_analyses SET assessment=NULL")
+    storage._conn_or_die().commit()
+    storage.close()
+    conn = sqlite3.connect(db_path)
+    conn.execute("ALTER TABLE ai4s_analyses DROP COLUMN assessment")
+    conn.commit()
+    conn.close()
+
+    storage = Storage(db_path)
+    storage.init()
+    analysis = storage.get_ai4s_analysis("https://legacy-ai4s")
+
+    assert analysis is not None
+    assert analysis.summary is not None
+    assert analysis.summary.assessment is None
+    columns = {
+        row[1]
+        for row in storage._conn_or_die().execute(
+            "PRAGMA table_info(ai4s_analyses)"
+        )
+    }
+    assert "assessment" in columns
     storage.close()
 
 

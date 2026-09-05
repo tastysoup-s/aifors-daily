@@ -48,6 +48,7 @@ def _summary() -> AI4SSummary:
         resources="https://example.com/code",
         model="test-model",
         cost_usd=0.002,
+        assessment="Evidence supports the result, but broader validation is still needed.",
     )
 
 
@@ -128,12 +129,14 @@ def test_ai4s_summary_construction():
     assert summary.innovation == "Jointly models sequence and structure."
     assert summary.scientific_significance == "Supports protein design experiments."
     assert summary.resources == "https://example.com/code"
+    assert summary.assessment.startswith("Evidence supports")
 
 
 @pytest.mark.parametrize(
     "overrides",
     [
         {"scientific_problem": 123},
+        {"assessment": 123},
         {"model": ""},
         {"cost_usd": -0.1},
         {"cost_usd": True},
@@ -150,6 +153,7 @@ def test_ai4s_summary_rejects_invalid_values(overrides):
         "resources": "none",
         "model": "test-model",
         "cost_usd": 0.001,
+        "assessment": "bounded judgement",
     }
     values.update(overrides)
 

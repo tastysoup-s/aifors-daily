@@ -313,6 +313,16 @@
   .field--result { grid-column: 1 / -1; border: 0; border-radius: 12px; padding: 14px 16px; background: linear-gradient(90deg, var(--category-soft), rgba(255, 255, 255, .6)); }
   .field--result h4::before { content: "RESULT / "; opacity: .7; }
   .field--innovation, .field--significance { border-top-width: 1px; }
+  .summary-stack { display: grid; gap: 14px; margin-top: 24px; }
+  .work-overview, .assessment, .legacy-insights { border-radius: 13px; padding: 16px 18px; }
+  .work-overview { border: 1px solid var(--line); background: rgba(255, 255, 255, .68); }
+  .work-overview > h4, .assessment > h4 { margin: 0 0 10px; color: var(--category-accent); font-size: 12px; font-weight: 850; letter-spacing: .09em; }
+  .overview-lines { display: grid; gap: 8px; }
+  .overview-lines p, .legacy-insights p { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 10px; margin: 0; font-size: 15px; line-height: 1.72; }
+  .overview-lines strong, .legacy-insights strong { color: var(--category-accent); font-size: 13px; }
+  .assessment { border-left: 3px solid var(--accent); background: linear-gradient(100deg, var(--accent-soft), rgba(255, 255, 255, .72)); }
+  .assessment p { margin: 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
+  .legacy-insights { display: grid; gap: 7px; padding-top: 12px; padding-bottom: 12px; background: var(--surface-muted); color: var(--muted); }
   .resources { margin-top: 18px; border-left: 3px solid var(--science-blue); padding: 10px 14px; background: #f2f6f8; }
   .resources h4 { margin: 0 0 3px; color: var(--science-blue); font-size: 12px; letter-spacing: .08em; }
   .resources p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
@@ -476,6 +486,7 @@
     .intel-card h3 { font-size: 21px; }
     .article-meta span + span::before { margin-right: 8px; }
     .summary-grid { grid-template-columns: 1fr; }
+    .overview-lines p, .legacy-insights p { grid-template-columns: 38px minmax(0, 1fr); }
     .field--result { grid-column: auto; }
     .science-visual { min-height: 142px; }
     .card-foot { align-items: flex-start; flex-direction: column; }

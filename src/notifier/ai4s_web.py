@@ -48,12 +48,15 @@ _UNINFORMATIVE_SUMMARY_TEXTS = {
     "未披露",
 }
 
-_DAILY_FIELDS = (
-    ("科学问题", "scientific_problem", "problem"),
-    ("AI 方法", "ai_method", "method"),
-    ("主要结果", "main_result", "result"),
-    ("创新点", "innovation", "innovation"),
-    ("科研意义", "scientific_significance", "significance"),
+_DAILY_OVERVIEW_FIELDS = (
+    ("问题", "scientific_problem"),
+    ("方法", "ai_method"),
+    ("结果", "main_result"),
+)
+
+_DAILY_LEGACY_FIELDS = (
+    ("创新", "innovation"),
+    ("意义", "scientific_significance"),
 )
 
 _IMAGE_METADATA_KEYS = (
@@ -305,14 +308,24 @@ def build_source_filters(
 
 def _daily_card_view(report_item: ReportItem) -> dict[str, object]:
     summary = report_item.analysis.summary
-    sections = []
+    overview = []
+    assessment = None
+    legacy_insights = []
     if summary is not None:
-        sections = [
-            {"label": label, "text": getattr(summary, field_name), "kind": kind}
-            for label, field_name, kind in _DAILY_FIELDS
+        overview = [
+            {"label": label, "text": getattr(summary, field_name)}
+            for label, field_name in _DAILY_OVERVIEW_FIELDS
             if is_informative_summary_text(getattr(summary, field_name))
         ]
-    low_information = len(sections) < 2
+        if is_informative_summary_text(summary.assessment):
+            assessment = summary.assessment
+        elif summary.assessment is None:
+            legacy_insights = [
+                {"label": label, "text": getattr(summary, field_name)}
+                for label, field_name in _DAILY_LEGACY_FIELDS
+                if is_informative_summary_text(getattr(summary, field_name))
+            ]
+    low_information = not overview and not assessment and not legacy_insights
     resources = (
         summary.resources
         if summary is not None and is_informative_summary_text(summary.resources)
@@ -321,7 +334,9 @@ def _daily_card_view(report_item: ReportItem) -> dict[str, object]:
     return {
         "report_item": report_item,
         "source": source_info(report_item.analysis.item.source),
-        "sections": [] if low_information else sections,
+        "overview": overview,
+        "assessment": assessment,
+        "legacy_insights": legacy_insights,
         "resources": resources,
         "low_information": low_information,
         "image_url": source_image_url(report_item.analysis.item.raw),
@@ -349,6 +364,7 @@ def _weekly_card_view(report_item: ReportItem) -> dict[str, object]:
         add_first("关键结果", summary.main_result)
         add_first(
             "值得关注",
+            summary.assessment,
             summary.scientific_significance,
             summary.innovation,
             summary.scientific_problem,
