@@ -67,7 +67,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m src.main generate-daily --db data/ai4s_dev.db --report-date 2026-09-03
 ```
 
-周报每周两个时间窗：周三覆盖周一至周三，周日覆盖周四至周日。周报会进行一次趋势综合 LLM 调用；相同时间窗重复执行会复用已保存报告，不再次调用模型。
+周报每周三、周日生成，每次覆盖截至报告日的最近七天（UTC，以条目发表时间为准）。周报会进行一次趋势综合 LLM 调用；相同时间窗重复执行会复用已保存报告，不再次调用模型。
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.main generate-weekly --db data/ai4s_dev.db --report-date 2026-09-06
@@ -145,3 +145,34 @@ python -m venv .venv
 ## License
 
 MIT. 详见 [LICENSE](./LICENSE)。
+
+
+## AI4S-Daily V2 intelligence
+
+- Fetch 广泛发现候选；Analyzer 独立判断 AI4S、科学领域与价值，检索 hint 不决定分类。
+- arXiv 科学领域源支持可选 `terms`：`(categories OR ...) AND (all:"method" OR ...)`；旧配置不变。
+- Daily 保持 AI4S、评分和 information sufficiency 门槛，再按 `ceil(top_n * 0.30)` 软领域上限选择；候选不足按原排名回填，同质量保留来源多样性。
+- 新摘要事实字段约 70/100 字，研判 40–90 中文字、一个关键判断。超长输出报单条错误，不截断事实或自动增加 LLM 调用。旧摘要及已保存报告不自动重写。
+- Daily 无图片时正文全宽，有图仅 112×96 缩略图；Weekly 以本周判断、领域走向、下一阶段观察为主，最后列 6 项证据。
+- Weekly 保持周三/周日 UTC cadence，每次观察 `report_date - 6 days` 到当日；候选按发表时间，过滤信息稀疏项，综合输入最多 30 项，尽量覆盖六领域。旧报告保留原窗口与原综合文本。
+
+### 可选 Tavily Search
+
+本地 `.env` 或 GitHub → Settings → Secrets and variables → Actions 添加 `TAVILY_API_KEY`。
+缺少 key 时日志为 `Tavily disabled: TAVILY_API_KEY missing`，其他源正常运行；无需新依赖。
+`config/sources.yaml` 配置一个七领域 query pack，每次运行最多 7 次 basic 搜索，每次最多 5 项（总计 ≤35）。
+使用 [Tavily 官方 Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search) 的 Bearer 认证与日期参数，关闭自动参数及 answer，无重试。
+
+Fetcher 对 query pack 强制截取前 7 个查询，不依赖本地预算文件或 Actions Cache。
+这是 per-run hard cap；手动重复运行会再次调用，不保证账户每日额度。没有 key 时不发请求。
+
+原始网站域名作为文章来源（如 `nature.com`），Coverage 显示 Discovery Search。
+raw 保留查询、领域提示、排名、分数、原域名和检索时间。通用搜索无发表日期时标记 `publication_date_known=false`：
+Daily 显示“发现于”，Weekly 排除未知发表日期，不能把今天检索到的旧文当成本周趋势。
+
+### 离线验证
+
+Windows：`python -m pytest --basetemp=.pytest_tmp`。测试使用 mock/fixture，禁止外网与真实 LLM。
+本地验证请使用数据库副本或测试数据库，渲染：
+`python -m src.main render-ai4s --db <local-copy.db> --output-dir <preview-directory>`。
+本次升级不要求清空数据库、修改 data 分支或全量重跑历史摘要。

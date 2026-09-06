@@ -25,3 +25,6 @@ site/
 .DS_Store
 .vscode/
 .idea/
+
+# Local pytest scratch
+.pytest_tmp/

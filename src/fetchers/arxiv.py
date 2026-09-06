@@ -19,9 +19,14 @@ _TIMEOUT_SECONDS = 60.0  # arxiv export endpoint is sometimes slow
 _RETRY_DELAY_SECONDS = 5.0  # back off once on transient failures
 
 
-def _build_query(categories: list[str]) -> str:
+def _build_query(categories: list[str], terms: list[str] | None = None) -> str:
     parts = [f"cat:{c}" for c in categories]
-    return " OR ".join(parts)
+    category_clause = " OR ".join(parts)
+    terms = [term.strip().replace('"', '') for term in (terms or []) if term.strip()]
+    if not terms:
+        return category_clause
+    term_clause = " OR ".join(f'all:"{term}"' for term in terms)
+    return f"({category_clause}) AND ({term_clause})" if parts else f"({term_clause})"
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -38,7 +43,7 @@ async def fetch_arxiv(source: dict[str, Any], window_hours: int) -> list[Item]:
     categories = source.get("categories", ["cs.AI"])
     max_results = int(source.get("max_results", 50))
     params = {
-        "search_query": _build_query(categories),
+        "search_query": _build_query(categories, source.get("terms")),
         "start": 0,
         "max_results": max_results,
         "sortBy": "submittedDate",

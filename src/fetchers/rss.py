@@ -127,4 +127,4 @@ async def fetch_rss(source: dict[str, Any], window_hours: int) -> list[Item]:
                 raw=dict(entry),
             )
         )
-    return items
+    return items[:max(0, int(source.get("max_results", len(items))))]

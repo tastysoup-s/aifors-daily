@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -44,7 +45,9 @@ def _render_analyzer_prompt(
         "taxonomy": taxonomy,
         "keywords": ", ".join(keywords) or "(none)",
         "source": item.source,
-        "date": item.published_at.date().isoformat(),
+        "date": ("发布时间未知（检索时间不代表发表时间）"
+                 if item.raw.get("publication_date_known") is False
+                 else item.published_at.date().isoformat()),
         "title": item.title,
         "content": (item.content or "")[:_ANALYZER_CONTENT_CHARS],
     })
@@ -134,11 +137,13 @@ async def run_ai4s_analyze(
     results = await asyncio.gather(
         *(_analyze_one(item, cfg, taxonomy) for item in items)
     )
+    category_counts: Counter[str] = Counter()
     for item, result, error in results:
         if error is not None or result is None:
             metrics["errors"] += 1
             continue
         storage.save_analyzer_result(item.url, result)
+        category_counts[result.primary_category or "non_ai4s"] += 1
         metrics["analyzed"] += 1
         metrics["cost_usd"] += result.cost_usd
         if result.is_ai4s:
@@ -158,4 +163,5 @@ async def run_ai4s_analyze(
         metrics["errors"],
         metrics["cost_usd"],
     )
+    logger.info("Analyzer primary_category distribution: %s", dict(sorted(category_counts.items())))
     return metrics

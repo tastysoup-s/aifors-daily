@@ -19,6 +19,7 @@ async def fetch_github(source: dict[str, Any], window_hours: int) -> list[Item]:
     name = source["name"]
     topic = source["topic"]
     min_stars = int(source.get("min_stars", 10))
+    max_results = min(100, max(1, int(source.get("max_results", 30))))
 
     # Approximate "trending": repos pushed within window, sorted by stars.
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
@@ -34,7 +35,7 @@ async def fetch_github(source: dict[str, Any], window_hours: int) -> list[Item]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    params = {"q": query, "sort": "stars", "order": "desc", "per_page": 30}
+    params = {"q": query, "sort": "stars", "order": "desc", "per_page": max_results}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(_API_URL, params=params, headers=headers)
@@ -42,7 +43,7 @@ async def fetch_github(source: dict[str, Any], window_hours: int) -> list[Item]:
         payload = response.json()
 
     items: list[Item] = []
-    for repo in payload.get("items", []):
+    for repo in payload.get("items", [])[:max_results]:
         pushed_raw = repo.get("pushed_at")
         if not pushed_raw:
             continue

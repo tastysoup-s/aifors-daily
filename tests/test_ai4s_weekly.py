@@ -128,18 +128,18 @@ def _weekly_response(**overrides) -> dict:
     return response
 
 
-def test_wednesday_period_covers_monday_through_wednesday_utc():
+def test_wednesday_period_covers_trailing_seven_days_utc():
     start, end = weekly_period(date(2026, 9, 2))
 
-    assert start == datetime(2026, 8, 31, tzinfo=timezone.utc)
+    assert start == datetime(2026, 8, 27, tzinfo=timezone.utc)
     assert end.date() == date(2026, 9, 2)
     assert end.hour == 23 and end.minute == 59
 
 
-def test_sunday_period_covers_thursday_through_sunday_utc():
+def test_sunday_period_covers_trailing_seven_days_utc():
     start, end = weekly_period(date(2026, 9, 6))
 
-    assert start == datetime(2026, 9, 3, tzinfo=timezone.utc)
+    assert start == datetime(2026, 8, 31, tzinfo=timezone.utc)
     assert end.date() == date(2026, 9, 6)
 
 
@@ -180,7 +180,7 @@ def test_candidate_filters_and_ordering(tmp_path: Path):
     _store(
         storage,
         "https://outside",
-        summarized_at=datetime(2026, 8, 30, tzinfo=timezone.utc),
+        summarized_at=datetime(2026, 8, 26, tzinfo=timezone.utc),
         score=10,
     )
 
@@ -216,7 +216,7 @@ def test_representatives_use_category_top_items_then_global_top():
     ]
 
 
-def test_representatives_preserve_every_present_category():
+def test_representatives_cover_six_domains_with_six_evidence_slots():
     categories = [
         "biology",
         "medicine",
@@ -236,8 +236,8 @@ def test_representatives_preserve_every_present_category():
 
     selected = select_representative_works(candidates)
 
-    assert len(selected) == 10
-    assert {item.analyzer.primary_category for item in selected} == set(categories)
+    assert len(selected) == 6
+    assert {item.analyzer.primary_category for item in selected} == set(categories[:6])
 
 
 @pytest.mark.asyncio
@@ -467,7 +467,7 @@ def test_weekly_guarantees_five_domains_before_global_quality_fill():
 
     selected = select_representative_works(candidates)
 
-    assert len(selected) == 10
+    assert len(selected) == 6
     assert {item.analyzer.primary_category for item in selected} == {
         "biology", "medicine", "chemistry", "materials", "physics",
     }
@@ -488,7 +488,7 @@ def test_weekly_globally_prioritizes_assessed_items():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("all_sparse", [False, True])
-async def test_sparse_representatives_do_not_change_synthesis_input_or_output(
+async def test_sparse_candidates_are_excluded_from_synthesis_and_evidence(
     monkeypatch, tmp_path, all_sparse
 ):
     storage = Storage(tmp_path / "weekly.db")
@@ -507,10 +507,15 @@ async def test_sparse_representatives_do_not_change_synthesis_input_or_output(
     metrics = await generate_weekly_report(storage, _config(), date(2026, 9, 2))
     report = storage.get_latest_weekly_report()
     assert metrics["representatives"] == (0 if all_sparse else 1)
-    assert "https://sparse" in complete.await_args.kwargs["prompt"]
-    assert report.overview == _weekly_response()["overview"]
-    assert report.category_trends == _weekly_response()["category_trends"]
-    assert report.watchlist == _weekly_response()["watchlist"]
+    if all_sparse:
+        assert complete.await_count == 0
+        assert report.overview is None
+        assert report.category_trends == {} and report.watchlist == []
+    else:
+        assert "https://sparse" not in complete.await_args.kwargs["prompt"]
+        assert report.overview == _weekly_response()["overview"]
+        assert report.category_trends == _weekly_response()["category_trends"]
+        assert report.watchlist == _weekly_response()["watchlist"]
     assert render_ai4s_site(storage, output_dir=tmp_path / "site")["weekly_items"] == len(report.items)
     storage.close()
 

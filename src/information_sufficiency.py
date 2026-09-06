@@ -49,6 +49,12 @@ def information_score(analysis: AI4SAnalysis) -> int:
 def insufficient_information_reason(analysis: AI4SAnalysis) -> str | None:
     if analysis.summary is None:
         return "missing summary"
+    # A description of conventional computation cannot fill a missing AI method.
+    if re.search(
+        r"原文未[^，。；;\n]{0,20}(?:AI/ML|AI/机器学习|AI|机器学习)[^，。；;\n]{0,12}方法",
+        analysis.summary.ai_method,
+    ):
+        return "missing required fields: ai_method (AI method not evidenced)"
     missing = [
         field
         for field in REQUIRED_INFORMATION_FIELDS

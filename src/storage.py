@@ -413,6 +413,8 @@ class Storage:
         period_end: datetime,
         min_score: int,
         limit: int | None = None,
+        *,
+        use_published_at: bool = False,
     ) -> list[AI4SAnalysis]:
         conn = self._conn_or_die()
         query = (
@@ -430,16 +432,29 @@ class Storage:
             "   AND a.summarized_at >= ? AND a.summarized_at <= ?"
             " ORDER BY a.score DESC, i.published_at DESC"
         )
+        if use_published_at:
+            query = query.replace(
+                "a.summarized_at >= ? AND a.summarized_at <= ?",
+                "julianday(i.published_at) >= julianday(?) AND julianday(i.published_at) < julianday(?)",
+            )
         params: list = [
             min_score,
             period_start.isoformat(),
-            period_end.isoformat(),
+            (period_end + timedelta(microseconds=1)).isoformat() if use_published_at else period_end.isoformat(),
         ]
         if limit is not None:
             query += " LIMIT ?"
             params.append(limit)
         rows = conn.execute(query, params).fetchall()
         return [self._row_to_ai4s_analysis(row) for row in rows]
+
+    def get_weekly_report_candidates(
+        self, period_start: datetime, period_end: datetime, min_score: int,
+    ) -> list[AI4SAnalysis]:
+        """Publication window, excluding discovery results with unknown dates."""
+        return [a for a in self.get_report_candidates(
+            period_start, period_end, min_score, use_published_at=True,
+        ) if a.item.raw.get("publication_date_known") is not False]
 
     def create_report(
         self,

@@ -6,6 +6,7 @@ from src.fetchers.arxiv import fetch_arxiv
 from src.fetchers.github import fetch_github
 from src.fetchers.hackernews import fetch_hackernews
 from src.fetchers.rss import fetch_rss
+from src.fetchers.tavily import fetch_tavily
 from src.models import Item
 
 
@@ -22,6 +23,7 @@ _REGISTRY: dict[str, str] = {
     "arxiv": "fetch_arxiv",
     "github": "fetch_github",
     "hackernews": "fetch_hackernews",
+    "tavily": "fetch_tavily",
 }
 
 

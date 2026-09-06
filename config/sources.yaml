@@ -1,47 +1,64 @@
-# AI4S-Daily 第一版信息源池。
-# 仅使用现有 arXiv / RSS / GitHub / Hacker News Fetcher；详细取舍见 docs/ai4s-sources.md。
+# AI4S-Daily V2: balanced discovery; Analyzer decides the actual domain.
 sources:
-  # ── Papers / Preprints：论文与生物医学预印本 ──
-  # arXiv 总上限 50，与 baseline 单源上限持平。
-  # 当前 Fetcher 对 categories 使用 OR；科学领域论文仍需未来的 AI 相关性二次过滤。
   - name: arxiv-ai-methods
     type: arxiv
     group: papers
     provider: arXiv
     categories: [cs.AI, cs.LG, stat.ML]
-    max_results: 20
+    max_results: 15
 
   - name: arxiv-biology-medicine
     type: arxiv
     group: papers
     provider: arXiv
     categories: [q-bio.BM, q-bio.GN, q-bio.QM]
-    max_results: 10
+    terms: &ai_terms [machine learning, deep learning, neural network, foundation model, transformer, graph neural network, generative model, diffusion, surrogate model, reinforcement learning, neural operator]
+    max_results: 8
 
-  - name: arxiv-chemistry-materials
+  - name: arxiv-chemistry
     type: arxiv
     group: papers
     provider: arXiv
-    categories: [physics.chem-ph, cond-mat.mtrl-sci]
-    max_results: 10
+    categories: [physics.chem-ph]
+    terms: *ai_terms
+    max_results: 12
 
-  - name: arxiv-physics-earth
+  - name: arxiv-materials
     type: arxiv
     group: papers
     provider: arXiv
-    categories: [physics.comp-ph, astro-ph.IM, physics.ao-ph, eess.IV]
-    max_results: 10
+    categories: [cond-mat.mtrl-sci]
+    terms: *ai_terms
+    max_results: 12
+
+  - name: arxiv-physics
+    type: arxiv
+    group: papers
+    provider: arXiv
+    categories: [physics.comp-ph, astro-ph.IM, hep-ex, quant-ph]
+    terms: *ai_terms
+    max_results: 12
+
+  - name: arxiv-earth
+    type: arxiv
+    group: papers
+    provider: arXiv
+    categories: [physics.ao-ph, physics.geo-ph]
+    terms: *ai_terms
+    max_results: 12
 
   - name: biorxiv-ai4s
     type: rss
     group: preprints
     provider: bioRxiv
+    max_results: 10
     url: "https://connect.biorxiv.org/biorxiv_xml.php?subject=bioinformatics+genomics"
 
   - name: medrxiv-ai4s
     type: rss
     group: preprints
     provider: medRxiv
+    max_results: 10
     url: "https://connect.medrxiv.org/medrxiv_xml.php?subject=health_informatics+genetic_and_genomic_medicine"
 
   # ── Code / Open-source：已核验且数量可控的 AI4S Topics ──
@@ -49,6 +66,7 @@ sources:
     type: github
     group: code
     provider: GitHub
+    max_results: 15
     topic: ai-for-science
     min_stars: 20
 
@@ -56,6 +74,7 @@ sources:
     type: github
     group: code
     provider: GitHub
+    max_results: 10
     topic: drug-discovery
     min_stars: 100
 
@@ -63,6 +82,7 @@ sources:
     type: github
     group: code
     provider: GitHub
+    max_results: 10
     topic: protein-design
     min_stars: 20
 
@@ -70,8 +90,33 @@ sources:
     type: github
     group: code
     provider: GitHub
+    max_results: 15
     topic: materials-informatics
     min_stars: 20
+
+  - name: github-chemistry
+    type: github
+    group: code
+    provider: GitHub
+    topic: cheminformatics
+    min_stars: 20
+    max_results: 15
+
+  - name: github-physics
+    type: github
+    group: code
+    provider: GitHub
+    topic: physics-informed-neural-networks
+    min_stars: 20
+    max_results: 15
+
+  - name: github-earth
+    type: github
+    group: code
+    provider: GitHub
+    topic: weather-forecasting
+    min_stars: 20
+    max_results: 15
 
   # ── Research Labs：官方研究机构 / 平台 RSS ──
   - name: deepmind-blog
@@ -105,3 +150,18 @@ sources:
     provider: Hacker News
     query: "AI science"
     min_points: 100
+
+  # Optional: seven calls per run, five results per query; no automatic retry.
+  - name: tavily-ai4s-discovery
+    type: tavily
+    group: search
+    provider: Tavily (discovery)
+    max_results: 5
+    queries:
+      biology: machine learning computational biology genomics protein design single cell scientific research
+      medicine: AI medical research medical imaging clinical prediction drug discovery biomedical foundation model
+      chemistry: machine learning chemistry molecular design reaction prediction computational chemistry
+      materials: AI materials science materials discovery crystal property prediction materials informatics
+      physics: machine learning physics scientific simulation surrogate model PDE particle quantum research
+      earth: AI climate weather forecasting geoscience earth observation scientific machine learning
+      general: AI for science scientific discovery foundation model scientific computing autonomous laboratory

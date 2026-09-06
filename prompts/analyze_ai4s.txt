@@ -10,6 +10,8 @@ AI4S 必须同时具备明确的科学问题和实质性的 AI/机器学习方�
 - AI 用于蛋白质设计、药物发现、材料发现、天气预测等明确科学任务：is_ai4s=true。
 - 仅依据输入判断；不得补充、猜测或使用外部事实。证据不足时降低分数。
 
+检索渠道、query 和 retrieval_category_hint 仅用于发现，不是分类证据；primary_category 只能依据内容中的科学问题决定，各领域采用同一质量标准。用户关键词不能替代 AI4S 判断或使未匹配的科学领域失去资格。
+
 【领域 taxonomy】
 primary_category 和 secondary_categories 只能使用以下 ID：
 {taxonomy}

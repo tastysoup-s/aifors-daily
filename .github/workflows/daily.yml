@@ -71,6 +71,7 @@ jobs:
         if: ${{ !inputs.render_only }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
         run: python -m src.main fetch --db "$AI4S_DB"
 
       - name: Analyze AI4S items

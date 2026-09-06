@@ -142,10 +142,10 @@ def test_render_with_daily_and_weekly_uses_report_layer_fields(tmp_path: Path):
         assert label in html
     for label in ("科学问题", "AI 方法", "创新点", "科研意义"):
         assert f"<h4>{label}</h4>" not in html
-    assert "本期概览" in html
-    assert "领域趋势" in html
-    assert "持续关注" in html
-    assert "代表工作" in html
+    assert "本周判断" in html
+    assert "领域走向" in html
+    assert "下一阶段观察" in html
+    assert "代表性工作" in html
     assert "技术方案" not in html
     assert "关键数据" not in html
     assert "为什么值得关注" not in html
@@ -351,7 +351,7 @@ def test_source_image_url_only_accepts_explicit_http_image_metadata(raw, expecte
     assert source_image_url(raw) == expected
 
 
-def test_rendered_visual_uses_source_image_or_category_fallback(tmp_path: Path):
+def test_rendered_visual_uses_small_thumbnail_or_full_width(tmp_path: Path):
     storage = Storage(tmp_path / "reports.db")
     storage.init()
     with_image = _store_analysis(
@@ -384,17 +384,18 @@ def test_rendered_visual_uses_source_image_or_category_fallback(tmp_path: Path):
     image_card = _card_for(html, "Paper With Image")
     fallback_card = _card_for(html, "Paper Without Image")
     earth_card = _card_for(html, "Earth Paper With Image")
-    assert 'data-visual-kind="source-image"' in image_card
+    assert 'class="source-thumbnail"' in image_card
     assert 'src="https://images.example.com/source.jpg"' in image_card
     assert 'loading="lazy"' in image_card
     assert 'referrerpolicy="no-referrer"' in image_card
-    assert 'data-visual-kind="category-fallback"' in fallback_card
+    assert 'data-source-thumbnail' not in fallback_card
+    assert 'category-fallback' not in html
     assert 'href="#icon-physics"' in fallback_card
     assert 'data-category="earth"' in earth_card
-    assert 'data-earth-visual' in earth_card
+    assert 'data-earth-visual' not in earth_card
     assert 'data-source-image' in earth_card
-    assert "visualFit < .62" in html
-    assert "image.naturalWidth < 420" in html
+    assert "width: 112px; height: 96px" in html
+    assert "classList.remove('has-thumbnail')" in html
 
 
 def test_dashboard_navigation_pipeline_and_responsive_contract(tmp_path: Path):
@@ -525,7 +526,7 @@ def test_daily_compacts_facts_into_overview_and_hides_uninformative_result(tmp_p
         (output_dir / "index.html").read_text(encoding="utf-8"),
         "Daily Informative Card",
     )
-    assert card.count("<h4>工作概述</h4>") == 1
+    assert card.count('<h4 class="sr-only">工作概述</h4>') == 1
     assert card.count("<h4>分析研判</h4>") == 1
     assert "<strong>问题</strong>" in card
     assert "<strong>方法</strong>" in card
@@ -591,12 +592,13 @@ def test_daily_old_summary_without_assessment_still_renders(tmp_path: Path):
         (output_dir / "index.html").read_text(encoding="utf-8"),
         "Legacy Summary Card",
     )
-    assert "<h4>工作概述</h4>" in card
+    assert '<h4 class="sr-only">工作概述</h4>' in card
     assert "分析研判" not in card
-    assert 'aria-label="历史摘要补充"' in card
+    assert 'aria-label="历史摘要补充"' not in card
+    assert "连接数据驱动方法与物理机制" not in card
 
 
-def test_weekly_cards_map_fields_hide_no_result_and_suppress_duplicates(tmp_path: Path):
+def test_weekly_evidence_uses_one_result_or_judgement_without_daily_sections(tmp_path: Path):
     storage = Storage(tmp_path / "reports.db")
     storage.init()
     complete = _store_analysis(
@@ -655,20 +657,21 @@ def test_weekly_cards_map_fields_hide_no_result_and_suppress_duplicates(tmp_path
 
     html = (output_dir / "index.html").read_text(encoding="utf-8")
     complete_card = _card_for(html, "Weekly Complete Card")
-    assert "<h4>方法亮点</h4>" in complete_card
-    assert "<h4>关键结果</h4>" in complete_card
-    assert "<h4>值得关注</h4>" in complete_card
+    assert "<h4>方法亮点</h4>" not in complete_card
+    assert "<h4>关键结果</h4>" not in complete_card
+    assert "<h4>值得关注</h4>" not in complete_card
+    assert "获得可验证的主要结果" in complete_card
 
     no_result_card = _card_for(html, "Weekly No Result Card")
-    assert "<h4>方法亮点</h4>" in no_result_card
+    assert "<h4>方法亮点</h4>" not in no_result_card
     assert "<h4>关键结果</h4>" not in no_result_card
     assert "原文未披露明确量化结果" not in no_result_card
-    assert "<h4>值得关注</h4>" in no_result_card
+    assert "该工作的价值" in no_result_card
 
     duplicate_card = _card_for(html, "Weekly Duplicate Card")
-    assert duplicate_card.count("相同的方法亮点") == 1
-    assert "<h4>值得关注</h4>" in duplicate_card
-    assert "解释独立的科学问题" in duplicate_card
+    assert "相同的方法亮点" not in duplicate_card
+    assert "<h4>值得关注</h4>" not in duplicate_card
+    assert "信息有限" in duplicate_card
 
     limited_card = _card_for(html, "Weekly Limited Card")
     assert "信息有限" in limited_card

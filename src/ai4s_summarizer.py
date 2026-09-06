@@ -45,6 +45,10 @@ _FACTUAL_SUMMARY_FIELDS = (
     "resources",
 )
 _SUMMARY_FIELDS = _FACTUAL_SUMMARY_FIELDS + ("assessment",)
+# Hard limits allow modest variance beyond the prompt's concise targets.
+# Count Chinese characters, allowing method names and measured values in English.
+_SUMMARY_CHAR_LIMITS = {"scientific_problem": 100, "ai_method": 140, "main_result": 140,
+                        "innovation": 100, "scientific_significance": 100, "assessment": 100}
 _UNSUPPORTED_INFERENCE_MARKERS = ("可推断", "推测")
 
 
@@ -105,7 +109,8 @@ def _render_summary_prompt(
     return render(load_prompt("summarize_ai4s"), {
         "keywords": ", ".join(keywords) or "(none)",
         "source": item.source,
-        "date": item.published_at.date().isoformat(),
+        "date": ("发布时间未知" if item.raw.get("publication_date_known") is False
+                 else item.published_at.date().isoformat()),
         "url": item.url,
         "title": item.title,
         "primary_category": analyzer.primary_category,
@@ -131,25 +136,31 @@ async def summarize_analysis(
     )
     missing = [field for field in _SUMMARY_FIELDS if field not in data]
     if missing:
-        raise LLMError(f"AI4S summary missing fields: {missing}")
+        raise LLMError(f"AI4S summary missing fields: {missing}", cost_usd=cost)
     wrong_types = [
         field for field in _SUMMARY_FIELDS if not isinstance(data[field], str)
     ]
     if wrong_types:
-        raise LLMError(f"AI4S summary fields must be strings: {wrong_types}")
+        raise LLMError(f"AI4S summary fields must be strings: {wrong_types}", cost_usd=cost)
     if not data["assessment"].strip():
-        raise LLMError("AI4S summary assessment must not be empty")
-    if " ".join(data["assessment"].split()).rstrip("。.!！") == " ".join(
-        data["innovation"].split()
-    ).rstrip("。.!！"):
-        raise LLMError("AI4S summary assessment must add judgement beyond innovation")
+        raise LLMError("AI4S summary assessment must not be empty", cost_usd=cost)
+    normalized_assessment = " ".join(data["assessment"].split()).rstrip("。.!！")
+    if any(normalized_assessment == " ".join(data[field].split()).rstrip("。.!！")
+           for field in _FACTUAL_SUMMARY_FIELDS[:-1]):
+        raise LLMError("AI4S summary assessment must add judgement beyond factual summary", cost_usd=cost)
+    too_long = [field for field, limit in _SUMMARY_CHAR_LIMITS.items()
+                if len(re.findall(r"[\u3400-\u9fff]", data[field])) > limit
+                or len(data[field]) > limit * 4]
+    if too_long:
+        # Reject, never truncate evidence or silently issue another paid request.
+        raise LLMError(f"AI4S summary exceeds concise length limits: {too_long}", cost_usd=cost)
     inferred = [
         field
         for field in _FACTUAL_SUMMARY_FIELDS
         if any(marker in data[field] for marker in _UNSUPPORTED_INFERENCE_MARKERS)
     ]
     if inferred:
-        raise LLMError(f"AI4S summary contains unsupported inference: {inferred}")
+        raise LLMError(f"AI4S summary contains unsupported inference: {inferred}", cost_usd=cost)
     summary = AI4SSummary(
         scientific_problem=data["scientific_problem"],
         ai_method=data["ai_method"],
@@ -221,6 +232,7 @@ async def run_ai4s_summarize(
     for analysis, summary, error in results:
         if error is not None or summary is None:
             metrics["errors"] += 1
+            metrics["cost_usd"] += float(getattr(error, "cost_usd", 0.0))
             continue
         storage.save_ai4s_summary(analysis.item.url, summary)
         metrics["summarized"] += 1

@@ -110,7 +110,7 @@ async def test_summarize_analysis_returns_valid_summary(monkeypatch):
     assert "biology" in prompt
     assert "protein-design" in prompt
     assert "不得自行点名输入中没有出现" in prompt
-    assert "必须控制在 120～220" in prompt
+    assert "必须控制在 40～90" in prompt
     assert analysis.item.title in prompt
     assert "SHOULD_NOT_APPEAR" not in prompt
 
@@ -174,7 +174,7 @@ async def test_summarize_analysis_rejects_assessment_that_repeats_innovation(mon
         AsyncMock(return_value=(response, 0.0)),
     )
 
-    with pytest.raises(LLMError, match="beyond innovation"):
+    with pytest.raises(LLMError, match="beyond factual summary"):
         await summarize_analysis(_analysis(), _config())
 
 
@@ -346,3 +346,44 @@ async def test_second_run_does_not_repeat_completed_summary(monkeypatch, tmp_pat
     assert second["summarized"] == 0
     assert complete.await_count == 1
     storage.close()
+
+
+@pytest.mark.asyncio
+async def test_overlong_assessment_isolated_and_paid_failure_counted(monkeypatch, tmp_path):
+    storage = Storage(tmp_path / "rc.db")
+    storage.init()
+    _store_analysis(storage, "https://success", score=8)
+    _store_analysis(storage, "https://too-long", score=8)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+
+    async def complete(**kwargs):
+        if "https://too-long" in kwargs["prompt"]:
+            return _summary_response(assessment="证" * 101), 0.003
+        return _summary_response(), 0.002
+
+    request = AsyncMock(side_effect=complete)
+    monkeypatch.setattr("src.ai4s_summarizer.complete_json", request)
+    try:
+        metrics = await run_ai4s_summarize(storage, _config())
+        assert metrics["summarized"] == 1 and metrics["errors"] == 1
+        assert metrics["cost_usd"] == pytest.approx(0.005)
+        assert storage.get_ai4s_analysis("https://success").summary is not None
+        assert storage.get_ai4s_analysis("https://too-long").summary is None
+        assert request.await_count == 2
+    finally:
+        storage.close()
+
+
+def test_summary_cli_returns_success_after_overlong_item(monkeypatch, tmp_path):
+    from src.main import main
+    path = tmp_path / "rc-cli.db"
+    storage = Storage(path)
+    storage.init()
+    _store_analysis(storage, "https://too-long", score=8)
+    storage.close()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("src.main.load_config", lambda **kwargs: _config())
+    request = AsyncMock(return_value=(_summary_response(assessment="证" * 101), 0.003))
+    monkeypatch.setattr("src.ai4s_summarizer.complete_json", request)
+    assert main(["summarize-ai4s", "--db", str(path), "--limit", "1"]) == 0
+    assert request.await_count == 1

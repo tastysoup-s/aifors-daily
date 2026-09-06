@@ -167,7 +167,7 @@ async def enrich_item_content(item: Item) -> EnrichedContent:
         if item.source.startswith("github:"):
             enriched = await _enrich_github(item)
             method = "github-readme"
-        elif item.source.startswith(("rss:", "arxiv:")):
+        elif item.source.startswith(("rss:", "arxiv:", "tavily:")):
             enriched = extract_official_page_text(await _fetch_text(item.url))
             method = "official-page"
         else:

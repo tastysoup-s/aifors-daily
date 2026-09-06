@@ -7,6 +7,7 @@ SOURCE_FAMILY_LABELS = {
     "code": "Open Source",
     "research_labs": "Research Labs",
     "community": "Community",
+    "search": "Discovery Search",
     "other": "Other",
 }
 
@@ -16,6 +17,7 @@ SOURCE_FAMILY_ORDER = (
     "code",
     "research_labs",
     "community",
+    "search",
     "other",
 )
 
@@ -31,6 +33,9 @@ class SourceInfo:
 def source_info(raw_source: str) -> SourceInfo:
     """Map a stored source id to stable, user-facing provenance."""
     value = raw_source.casefold()
+    if value.startswith("tavily:"):
+        domain = value.split(":", 1)[1]
+        return SourceInfo(f"tavily-{domain}", domain, "search", "Discovery")
     if value.startswith("arxiv:"):
         return SourceInfo("arxiv", "arXiv", "papers", "Paper")
     if value.startswith("rss:biorxiv"):

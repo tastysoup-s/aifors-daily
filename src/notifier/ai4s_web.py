@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
@@ -52,11 +53,6 @@ _DAILY_OVERVIEW_FIELDS = (
     ("问题", "scientific_problem"),
     ("方法", "ai_method"),
     ("结果", "main_result"),
-)
-
-_DAILY_LEGACY_FIELDS = (
-    ("创新", "innovation"),
-    ("意义", "scientific_significance"),
 )
 
 _IMAGE_METADATA_KEYS = (
@@ -288,7 +284,7 @@ def build_source_filters(
         family_infos = [info for info in active_infos.values() if info.family == family]
         if not family_infos:
             continue
-        if family == "research_labs":
+        if family in {"research_labs", "search"}:
             filters.append(
                 {"kind": "family", "value": family, "label": SOURCE_FAMILY_LABELS[family]}
             )
@@ -310,25 +306,19 @@ def _daily_card_view(report_item: ReportItem) -> dict[str, object]:
     summary = report_item.analysis.summary
     overview = []
     assessment = None
-    legacy_insights = []
     if summary is not None:
         overview = [
-            {"label": label, "text": getattr(summary, field_name)}
+            {"label": label, "text": getattr(summary, field_name), "field": field_name}
             for label, field_name in _DAILY_OVERVIEW_FIELDS
             if is_informative_summary_text(getattr(summary, field_name))
         ]
         if is_informative_summary_text(summary.assessment):
             assessment = summary.assessment
-        elif summary.assessment is None:
-            legacy_insights = [
-                {"label": label, "text": getattr(summary, field_name)}
-                for label, field_name in _DAILY_LEGACY_FIELDS
-                if is_informative_summary_text(getattr(summary, field_name))
-            ]
-    low_information = not overview and not assessment and not legacy_insights
+    low_information = not overview and not assessment
     resources = (
         summary.resources
         if summary is not None and is_informative_summary_text(summary.resources)
+        and re.search(r"https?://[^\s<>]+", summary.resources)
         else None
     )
     return {
@@ -336,46 +326,28 @@ def _daily_card_view(report_item: ReportItem) -> dict[str, object]:
         "source": source_info(report_item.analysis.item.source),
         "overview": overview,
         "assessment": assessment,
-        "legacy_insights": legacy_insights,
         "resources": resources,
         "low_information": low_information,
         "image_url": source_image_url(report_item.analysis.item.raw),
+        "date_label": ("发现于 " if report_item.analysis.item.raw.get("publication_date_known") is False else "")
+                      + report_item.analysis.item.published_at.strftime("%Y-%m-%d"),
     }
 
 
 def _weekly_card_view(report_item: ReportItem) -> dict[str, object]:
     summary = report_item.analysis.summary
-    sections: list[dict[str, str]] = []
-    used_texts: set[str] = set()
-
-    def add_first(label: str, *values: str | None) -> None:
-        for value in values:
-            if not is_informative_summary_text(value):
-                continue
-            normalized = _normalize_summary_text(value)
-            if normalized in used_texts:
-                continue
-            sections.append({"label": label, "text": value})
-            used_texts.add(normalized)
-            return
-
+    evidence = None
     if summary is not None:
-        add_first("方法亮点", summary.ai_method, summary.innovation)
-        add_first("关键结果", summary.main_result)
-        add_first(
-            "值得关注",
-            summary.assessment,
-            summary.scientific_significance,
-            summary.innovation,
-            summary.scientific_problem,
-        )
-
+        evidence = next((value for value in (summary.main_result, summary.assessment)
+                         if is_informative_summary_text(value)), None)
+        if evidence:
+            # One intact sentence; the source remains available for full evidence.
+            evidence = re.split(r"(?<=[。！？])\s*|(?<=[.!?])\s+", evidence, maxsplit=1)[0]
     return {
         "report_item": report_item,
         "source": source_info(report_item.analysis.item.source),
-        "sections": sections,
-        "low_information": not sections,
-        "image_url": source_image_url(report_item.analysis.item.raw),
+        "evidence": evidence,
+        "low_information": not evidence,
     }
 
 

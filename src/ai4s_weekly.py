@@ -1,34 +1,34 @@
 import json
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 
+from src.ai4s_daily import select_daily_candidates
 from src.config import Config
 from src.information_sufficiency import (
     information_score,
     insufficient_information_reason,
     recommendation_sort_key,
+    recommendation_quality_tier,
 )
 from src.llm import LLMError, check_api_keys, complete_json
 from src.models import AI4S_CATEGORY_IDS, AI4SAnalysis, Report
 from src.prompts import load_prompt, render
+from src.source_info import source_info
 from src.storage import Storage
 
 
 logger = logging.getLogger(__name__)
 
 WEEKLY_SYNTHESIS_CANDIDATE_LIMIT = 30
-WEEKLY_REPRESENTATIVE_LIMIT = 10
-WEEKLY_MIN_CATEGORIES = 5
+WEEKLY_REPRESENTATIVE_LIMIT = 6
+WEEKLY_MIN_CATEGORIES = 6
 
 
 def weekly_period(report_date: date) -> tuple[datetime, datetime]:
-    if report_date.weekday() == 2:  # Wednesday: Monday through Wednesday
-        start_date = report_date - timedelta(days=2)
-    elif report_date.weekday() == 6:  # Sunday: Thursday through Sunday
-        start_date = report_date - timedelta(days=3)
-    else:
+    if report_date.weekday() not in (2, 6):
         raise ValueError("weekly report date must be a Wednesday or Sunday")
+    start_date = report_date - timedelta(days=6)
     return (
         datetime.combine(start_date, time.min, tzinfo=timezone.utc),
         datetime.combine(report_date, time.max, tzinfo=timezone.utc),
@@ -50,39 +50,65 @@ def select_representative_works(
     qualified = []
     for analysis in candidates:
         reason = insufficient_information_reason(analysis)
-        if reason is None:
+        if reason is None and analysis.analyzer.is_ai4s:
             qualified.append(analysis)
         else:
             logger.info(
                 "weekly filtered sparse: %s information_score=%d reason=%s",
                 analysis.item.title, information_score(analysis), reason,
             )
-    candidates = sorted(qualified, key=recommendation_sort_key, reverse=True)
-    selected_urls: set[str] = set()
-
-    # Guarantee five domains when the qualified pool contains that many.
-    priority_categories: list[str] = []
-    for analysis in candidates:
-        category = analysis.analyzer.primary_category
-        if category not in priority_categories:
-            priority_categories.append(category)
-            selected_urls.add(analysis.item.url)
-            if len(priority_categories) >= WEEKLY_MIN_CATEGORIES:
-                break
-
-    for analysis in candidates:
-        if len(selected_urls) >= WEEKLY_REPRESENTATIVE_LIMIT:
-            break
-        selected_urls.add(analysis.item.url)
-
-    selected = [
-        analysis for analysis in candidates if analysis.item.url in selected_urls
-    ][:WEEKLY_REPRESENTATIVE_LIMIT]
+    pool = list({a.item.url: a for a in qualified}.values())
+    selected: list[AI4SAnalysis] = []
+    categories: set[str] = set()
+    families: Counter[str] = Counter()
+    # A domain's best research paper is preferred; ecosystem signals fill gaps.
+    while pool and len(selected) < WEEKLY_REPRESENTATIVE_LIMIT:
+        uncovered = [a for a in pool if a.analyzer.primary_category not in categories]
+        eligible = uncovered if uncovered and len(categories) < WEEKLY_MIN_CATEGORIES else pool
+        chosen = max(eligible, key=lambda a: (
+            int(a.analyzer.content_type == "paper" and source_info(a.item.source).family != "code"),
+            *recommendation_quality_tier(a),
+            -families[source_info(a.item.source).family],
+            a.item.published_at.timestamp(),
+        ))
+        pool.remove(chosen)
+        selected.append(chosen)
+        categories.add(chosen.analyzer.primary_category)
+        families[source_info(chosen.item.source).family] += 1
+    selected.sort(key=recommendation_sort_key, reverse=True)
+    logger.info("Weekly representative categories: %s", dict(Counter(a.analyzer.primary_category for a in selected)))
     logger.info(
         "Weekly representative information filter: candidates=%d qualified=%d "
         "filtered_sparse=%d selected=%d",
         candidate_count, len(qualified), candidate_count - len(qualified), len(selected),
     )
+    return selected
+
+
+def select_weekly_synthesis_candidates(
+    candidates: list[AI4SAnalysis],
+) -> list[AI4SAnalysis]:
+    unique = list({a.item.url: a for a in candidates}.values())
+    selected = select_daily_candidates(unique, WEEKLY_SYNTHESIS_CANDIDATE_LIMIT)
+    # Include the research evidence before synthesis, even when higher scoring
+    # ecosystem posts would otherwise consume all thirty positions.
+    evidence = select_representative_works(unique)
+    evidence_urls = {a.item.url for a in evidence}
+    counts = Counter(a.analyzer.primary_category for a in selected)
+    for candidate in evidence:
+        if any(a.item.url == candidate.item.url for a in selected):
+            continue
+        category = candidate.analyzer.primary_category
+        if len(selected) == WEEKLY_SYNTHESIS_CANDIDATE_LIMIT:
+            replaceable = [a for a in reversed(selected) if a.item.url not in evidence_urls]
+            same_domain = [a for a in replaceable if a.analyzer.primary_category == category]
+            removed = (same_domain or [a for a in replaceable if counts[a.analyzer.primary_category] > 1])[0]
+            selected.remove(removed)
+            counts[removed.analyzer.primary_category] -= 1
+        selected.append(candidate)
+        counts[category] += 1
+    selected.sort(key=recommendation_sort_key, reverse=True)
+    logger.info("Weekly synthesis input categories: %s", dict(Counter(a.analyzer.primary_category for a in selected)))
     return selected
 
 
@@ -95,6 +121,10 @@ def _render_weekly_prompt(
         assert summary is not None
         grouped[analysis.analyzer.primary_category].append({
             "title": analysis.item.title,
+            "url": analysis.item.url,
+            "source": analysis.item.source,
+            "published_at": analysis.item.published_at.isoformat(),
+            "assessment": summary.assessment,
             "category": analysis.analyzer.primary_category,
             "content_type": analysis.analyzer.content_type,
             "score": analysis.analyzer.score,
@@ -143,6 +173,8 @@ def _validate_synthesis(
         not isinstance(value, str) or not value.strip() for value in watchlist
     ):
         raise LLMError("weekly synthesis watchlist must be a list of non-empty strings")
+    if len(watchlist) > 5:
+        raise LLMError("weekly synthesis watchlist must contain at most five questions")
     return overview, category_trends, watchlist
 
 
@@ -152,7 +184,7 @@ async def generate_weekly_report(
     report_date: date,
 ) -> dict[str, object]:
     period_start, period_end = weekly_period(report_date)
-    candidates = storage.get_report_candidates(
+    candidates = storage.get_weekly_report_candidates(
         period_start,
         period_end,
         min_score=cfg.score_threshold,
@@ -161,17 +193,18 @@ async def generate_weekly_report(
     if existing is not None:
         return _metrics(existing, len(candidates), created=False, llm_calls=0, cost_usd=0.0)
 
-    representatives = select_representative_works(candidates)
-    if not candidates:
+    logger.info("Weekly candidate categories: %s", dict(Counter(a.analyzer.primary_category for a in candidates)))
+    synthesis_candidates = select_weekly_synthesis_candidates(candidates)
+    representatives = select_representative_works(synthesis_candidates)
+    if not synthesis_candidates:
         report, created = storage.create_report(
             "weekly", period_start, period_end, representatives
         )
-        return _metrics(report, 0, created=created, llm_calls=0, cost_usd=0.0)
+        return _metrics(report, len(candidates), created=created, llm_calls=0, cost_usd=0.0)
 
     if cfg.models is None:
         raise RuntimeError("preferences.yaml must define models.summarizer")
     check_api_keys(cfg.models)
-    synthesis_candidates = candidates[:WEEKLY_SYNTHESIS_CANDIDATE_LIMIT]
     data, cost_usd = await complete_json(
         model=cfg.models.summarizer,
         prompt=_render_weekly_prompt(synthesis_candidates, period_start, period_end),

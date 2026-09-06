@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 
 from src.ai4s_daily import select_daily_candidates
-from src.ai4s_weekly import select_representative_works
+from src.ai4s_weekly import select_representative_works, select_weekly_synthesis_candidates
 from src.config import Config, load_config
 from src.information_sufficiency import has_sufficient_information
 from src.storage import Storage
@@ -23,12 +23,14 @@ def refresh_report_selections(storage: Storage, cfg: Config) -> list[dict]:
         for report in (storage.get_latest_daily_report(), storage.get_latest_weekly_report()):
             if report is None:
                 continue
-            candidates = storage.get_report_candidates(
+            get_candidates = (storage.get_weekly_report_candidates
+                              if report.report_type == "weekly" else storage.get_report_candidates)
+            candidates = get_candidates(
                 report.period_start, report.period_end, min_score=cfg.score_threshold,
             )
             qualified = [a for a in candidates if has_sufficient_information(a)]
             selected = (
-                select_representative_works(candidates) if report.report_type == "weekly"
+                select_representative_works(select_weekly_synthesis_candidates(candidates)) if report.report_type == "weekly"
                 else select_daily_candidates(qualified, cfg.top_n)
             )
             rows = [
