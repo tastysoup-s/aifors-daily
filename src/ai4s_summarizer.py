@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import re
+from collections import defaultdict, deque
 
 from src.config import Config
 from src.content_enrichment import enrich_item_content
 from src.llm import LLMError, check_api_keys, complete_json
 from src.models import AI4SAnalysis, AI4SSummary
+from src.information_sufficiency import has_sufficient_information
 from src.prompts import load_prompt, render
 from src.storage import Storage
 
@@ -211,8 +213,20 @@ async def run_ai4s_summarize(
     candidates = storage.get_unsummarized_ai4s_analyses(
         min_score=cfg.score_threshold,
     )
-    batch_limit = cfg.top_n if limit is None else min(cfg.top_n, limit)
-    selected = candidates[:batch_limit]
+    # Sparse summaries cannot fill Daily. Read further new candidates, bounded
+    # to five reading slots per requested recommendation; explicit limits remain
+    # hard paid-call caps. Never retry a candidate within this run.
+    batch_limit = cfg.top_n * 5 if limit is None else min(cfg.top_n, limit)
+    # Give each analyzed domain a reading opportunity before filling its next
+    # slot. Score/recency order within a domain and the paid batch cap stay intact.
+    domains = defaultdict(deque)
+    for candidate in candidates:
+        domains[candidate.analyzer.primary_category].append(candidate)
+    selected = []
+    while len(selected) < batch_limit and any(domains.values()):
+        for domain in domains.values():
+            if domain and len(selected) < batch_limit:
+                selected.append(domain.popleft())
     logger.info(
         "AI4S summary candidates=%d selected=%d",
         len(candidates),
@@ -221,22 +235,29 @@ async def run_ai4s_summarize(
 
     metrics: dict[str, int | float] = {
         "candidates": len(candidates),
-        "selected": len(selected),
+        "selected": 0,
         "summarized": 0,
+        "qualified": 0,
         "errors": 0,
         "cost_usd": 0.0,
     }
-    results = await asyncio.gather(
-        *(_summarize_one(analysis, cfg) for analysis in selected)
-    )
-    for analysis, summary, error in results:
-        if error is not None or summary is None:
-            metrics["errors"] += 1
-            metrics["cost_usd"] += float(getattr(error, "cost_usd", 0.0))
-            continue
-        storage.save_ai4s_summary(analysis.item.url, summary)
-        metrics["summarized"] += 1
-        metrics["cost_usd"] += summary.cost_usd
+    while selected and metrics["qualified"] < cfg.top_n:
+        needed = cfg.top_n - int(metrics["qualified"])
+        batch, selected = selected[:needed], selected[needed:]
+        metrics["selected"] += len(batch)
+        results = await asyncio.gather(
+            *(_summarize_one(analysis, cfg) for analysis in batch)
+        )
+        for analysis, summary, error in results:
+            if error is not None or summary is None:
+                metrics["errors"] += 1
+                metrics["cost_usd"] += float(getattr(error, "cost_usd", 0.0))
+                continue
+            storage.save_ai4s_summary(analysis.item.url, summary)
+            analysis.summary = summary
+            metrics["summarized"] += 1
+            metrics["qualified"] += int(has_sufficient_information(analysis))
+            metrics["cost_usd"] += summary.cost_usd
 
     logger.info(
         "AI4S summarize done: candidates=%d selected=%d summarized=%d "

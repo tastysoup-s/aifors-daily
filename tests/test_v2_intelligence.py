@@ -33,6 +33,33 @@ def test_generic_soft_cap_with_sufficient_alternatives(dominant):
     assert all(has_sufficient_information(a) for a in selected)
 
 
+@pytest.mark.parametrize("counts", [
+    {"biology": 10, "medicine": 6, "materials": 4, "physics": 3, "chemistry": 2},
+    # Backfill must leave a slot for a second domain even at a lower quality tier.
+    {"biology": 10, "medicine": 6, "materials": 4, "physics": 1},
+])
+def test_biomedical_group_reserves_three_and_two_other_domains(counts):
+    pool = [_analysis(f"https://{c}-{i}", category=c,
+                      score=10 if c in {"biology", "medicine"} else 8 if c == "materials" else 7)
+            for c, n in counts.items() for i in range(n)]
+    selected = select_daily_candidates(pool, 10)
+    domains = Counter(a.analyzer.primary_category for a in selected)
+    assert len(selected) == 10
+    assert domains["biology"] + domains["medicine"] <= 7
+    assert sum(n for c, n in domains.items() if c not in {"biology", "medicine"}) >= 3
+    assert len(set(domains) - {"biology", "medicine"}) >= 2
+
+
+def test_group_reservation_backfills_when_only_two_other_items_qualify():
+    pool = [_analysis(f"https://bio-{i}", score=10) for i in range(16)]
+    pool += [_analysis(f"https://{c}", category=c, score=7) for c in ("materials", "physics")]
+    sparse = _analysis("https://sparse-chemistry", category="chemistry", score=10)
+    sparse.summary = replace(sparse.summary, ai_method="信息不足")
+    selected = select_daily_candidates([sparse, *pool], 10)
+    assert Counter(a.analyzer.primary_category for a in selected) == {"biology": 8, "materials": 1, "physics": 1}
+    assert all(has_sufficient_information(a) for a in selected)
+
+
 @pytest.mark.parametrize("limit,expected_cap", [(5, 2), (10, 3), (20, 6)])
 def test_soft_cap_scales_with_limit(limit, expected_cap):
     pool = [_analysis(f"https://bio-{i}", score=10) for i in range(25)]

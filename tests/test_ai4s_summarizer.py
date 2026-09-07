@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock
+from dataclasses import replace
+from collections import Counter
 
 import pytest
 
@@ -90,6 +92,65 @@ def _store_analysis(
     item = _item(url, hours_ago=hours_ago)
     storage.record_items([item])
     storage.save_analyzer_result(url, _result(score=score, is_ai4s=is_ai4s))
+
+
+@pytest.mark.asyncio
+async def test_summary_batch_reads_other_domains_without_exceeding_budget(monkeypatch, tmp_path):
+    storage = Storage(tmp_path / "domains.db")
+    storage.init()
+    for category, count in {"biology": 10, "medicine": 6, "materials": 4, "physics": 3, "chemistry": 2}.items():
+        for i in range(count):
+            url = f"https://{category}-{i}"
+            storage.record_items([_item(url)])
+            result = replace(_result(score=10 if category in {"biology", "medicine"} else 7),
+                             primary_category=category)
+            storage.save_analyzer_result(url, result)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    complete = AsyncMock(return_value=(_summary_response(), 0.002))
+    monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
+    metrics = await run_ai4s_summarize(storage, _config())
+    summarized = storage.get_recent_summarized_ai4s_analyses(7)
+    assert Counter(a.analyzer.primary_category for a in summarized) == {
+        "biology": 2, "medicine": 2, "materials": 2, "physics": 2, "chemistry": 2}
+    assert metrics["selected"] == complete.await_count == 10
+    storage.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit_limit,expected_calls,qualified", [(None, 3, 1), (1, 1, 0)])
+async def test_sparse_readings_advance_to_new_candidates_with_a_hard_budget(
+    monkeypatch, tmp_path, explicit_limit, expected_calls, qualified,
+):
+    storage = Storage(tmp_path / "sparse-readings.db")
+    storage.init()
+    for i in range(8):
+        _store_analysis(storage, f"https://item-{i}", hours_ago=i)
+    calls = []
+    async def complete(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _summary_response(scientific_significance="信息不足" if len(calls) < 3 else "减少实验筛选工作量。"), 0.002
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
+    metrics = await run_ai4s_summarize(storage, _config(top_n=1), limit=explicit_limit)
+    assert metrics["selected"] == len(set(calls)) == expected_calls
+    assert metrics["qualified"] == qualified
+    assert metrics["cost_usd"] == pytest.approx(expected_calls * 0.002)
+    storage.close()
+
+
+@pytest.mark.asyncio
+async def test_default_reading_budget_stops_after_five_slots_per_recommendation(monkeypatch, tmp_path):
+    storage = Storage(tmp_path / "bounded.db")
+    storage.init()
+    for i in range(8):
+        _store_analysis(storage, f"https://item-{i}")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    complete = AsyncMock(return_value=(_summary_response(scientific_significance="信息不足"), 0.002))
+    monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
+    metrics = await run_ai4s_summarize(storage, _config(top_n=1))
+    assert metrics["selected"] == complete.await_count == 5
+    assert metrics["qualified"] == 0
+    storage.close()
 
 
 @pytest.mark.asyncio

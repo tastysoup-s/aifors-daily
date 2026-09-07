@@ -94,6 +94,10 @@ def select_daily_candidates(
         key=recommendation_sort_key, reverse=True,
     )
     cap = ceil(limit * 0.30)
+    non_biomedical = [a for a in candidates
+                      if a.analyzer.primary_category not in {"biology", "medicine"}]
+    reserve = min(cap, len(non_biomedical))
+    domain_target = min(2, reserve, len({a.analyzer.primary_category for a in non_biomedical}))
     selected: list[AI4SAnalysis] = []
     categories: Counter[str] = Counter()
     families: Counter[str] = Counter()
@@ -103,8 +107,22 @@ def select_daily_candidates(
         for _, group in groupby(pool, key=recommendation_quality_tier):
             tier = list(group)
             while tier and len(selected) < limit:
+                non_bio_count = sum(n for c, n in categories.items()
+                                    if c not in {"biology", "medicine"})
+                non_bio_domains = {c for c, n in categories.items()
+                                   if n and c not in {"biology", "medicine"}}
+                slots = limit - len(selected)
                 eligible = [a for a in tier if not enforce_cap
                             or categories[a.analyzer.primary_category] < cap]
+                # Reserve only for already qualified evidence. These constraints
+                # also apply during soft-cap backfill, including lower score tiers.
+                if slots <= reserve - non_bio_count:
+                    eligible = [a for a in eligible
+                                if a.analyzer.primary_category not in {"biology", "medicine"}]
+                if slots <= domain_target - len(non_bio_domains):
+                    eligible = [a for a in eligible
+                                if a.analyzer.primary_category not in {"biology", "medicine"}
+                                and a.analyzer.primary_category not in non_bio_domains]
                 if not eligible:
                     deferred.extend(tier)
                     break
