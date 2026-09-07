@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from src.config import Config
+from src.content_enrichment import enrich_item_content
 from src.llm import LLMError, check_api_keys, complete_json
 from src.models import AI4S_CATEGORY_IDS, AnalyzerResult, Item
 from src.prompts import load_prompt, render
@@ -14,7 +15,7 @@ from src.storage import Storage
 
 logger = logging.getLogger(__name__)
 
-_ANALYZER_CONTENT_CHARS = 1200
+_ANALYZER_CONTENT_CHARS = 8_000
 _REQUIRED_FIELDS = (
     "is_ai4s",
     "primary_category",
@@ -40,7 +41,12 @@ def _render_analyzer_prompt(
     item: Item,
     keywords: list[str],
     taxonomy: str,
+    enriched_text: str | None = None,
 ) -> str:
+    abstract = (item.content or "").strip()
+    evidence = (enriched_text or abstract).strip()
+    if evidence == abstract:
+        evidence = "（未取得更多正文；仅依据摘要判断。）"
     return render(load_prompt("analyze_ai4s"), {
         "taxonomy": taxonomy,
         "keywords": ", ".join(keywords) or "(none)",
@@ -49,7 +55,8 @@ def _render_analyzer_prompt(
                  if item.raw.get("publication_date_known") is False
                  else item.published_at.date().isoformat()),
         "title": item.title,
-        "content": (item.content or "")[:_ANALYZER_CONTENT_CHARS],
+        "abstract": abstract[:2_500],
+        "enriched_text": evidence[:_ANALYZER_CONTENT_CHARS],
     })
 
 
@@ -60,12 +67,14 @@ async def analyze_item(
 ) -> AnalyzerResult:
     if cfg.models is None:
         raise RuntimeError("preferences.yaml must define models.scorer to run analyze")
+    enriched = await enrich_item_content(item)
     data, cost = await complete_json(
         model=cfg.models.scorer,
         prompt=_render_analyzer_prompt(
             item,
             cfg.keywords,
             taxonomy if taxonomy is not None else _load_taxonomy(),
+            enriched.text,
         ),
         max_tokens=400,
     )
@@ -134,9 +143,11 @@ async def run_ai4s_analyze(
         "errors": 0,
         "cost_usd": 0.0,
     }
-    results = await asyncio.gather(
-        *(_analyze_one(item, cfg, taxonomy) for item in items)
-    )
+    semaphore = asyncio.Semaphore(8)
+    async def limited(item: Item):
+        async with semaphore:
+            return await _analyze_one(item, cfg, taxonomy)
+    results = await asyncio.gather(*(limited(item) for item in items))
     category_counts: Counter[str] = Counter()
     for item, result, error in results:
         if error is not None or result is None:

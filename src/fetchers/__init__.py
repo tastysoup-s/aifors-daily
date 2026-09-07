@@ -11,6 +11,7 @@ from src.models import Item
 
 
 logger = logging.getLogger(__name__)
+_ARXIV_REQUEST_INTERVAL_SECONDS = 3.2
 
 
 FetcherFn = Callable[[dict[str, Any], int], Awaitable[list[Item]]]
@@ -51,10 +52,27 @@ async def fetch_all(
 ) -> list[Item]:
     if not sources:
         return []
-    results = await asyncio.gather(
-        *(_run_one(src, window_hours) for src in sources),
-        return_exceptions=False,
+    indexed_results: list[tuple[int, FetchOutcome]] = []
+    arxiv_sources = [(index, source) for index, source in enumerate(sources)
+                     if source.get("type") == "arxiv"]
+    other_sources = [(index, source) for index, source in enumerate(sources)
+                     if source.get("type") != "arxiv"]
+
+    async def run_arxiv_sources() -> list[tuple[int, FetchOutcome]]:
+        values = []
+        for position, (index, source) in enumerate(arxiv_sources):
+            if position:
+                await asyncio.sleep(_ARXIV_REQUEST_INTERVAL_SECONDS)
+            values.append((index, await _run_one(source, window_hours)))
+        return values
+
+    other_results, arxiv_results = await asyncio.gather(
+        asyncio.gather(*(_run_one(source, window_hours) for _, source in other_sources)),
+        run_arxiv_sources(),
     )
+    indexed_results.extend(zip((index for index, _ in other_sources), other_results))
+    indexed_results.extend(arxiv_results)
+    results = [result for _, result in sorted(indexed_results)]
     items: list[Item] = []
     logger.info("Source fetch summary")
     for name, _src_type, succeeded, source_items in results:

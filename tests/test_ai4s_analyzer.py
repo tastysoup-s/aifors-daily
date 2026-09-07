@@ -7,6 +7,7 @@ import pytest
 from src.ai4s_analyzer import analyze_item, run_ai4s_analyze
 from src.config import Config, Models
 from src.llm import LLMError
+from src.content_enrichment import EnrichedContent
 from src.models import Item
 from src.storage import Storage
 
@@ -61,6 +62,37 @@ async def test_analyze_item_returns_valid_ai4s_result(monkeypatch):
     assert "- biology: Biology" in prompt
     assert "protein design" in prompt
     assert _item().title in prompt
+
+
+@pytest.mark.asyncio
+async def test_analyzer_uses_enriched_evidence_with_bounded_prompt(monkeypatch):
+    enriched = "METHOD_EVIDENCE " + "x" * 20_000
+    monkeypatch.setattr("src.ai4s_analyzer.enrich_item_content", AsyncMock(
+        return_value=EnrichedContent(enriched, 50, len(enriched), "arxiv-html")))
+    complete = AsyncMock(return_value=(_valid_response(), 0.001))
+    monkeypatch.setattr("src.ai4s_analyzer.complete_json", complete)
+    await analyze_item(_item(), _config(), taxonomy="taxonomy")
+    prompt = complete.await_args.kwargs["prompt"]
+    assert "METHOD_EVIDENCE" in prompt
+    assert len(prompt) < 12_000
+
+
+@pytest.mark.asyncio
+async def test_analyzer_enrichment_failure_is_isolated_by_batch(monkeypatch, tmp_path):
+    storage = Storage(tmp_path / "enrichment-errors.db")
+    storage.init()
+    storage.record_items([_item("https://success"), _item("https://failure")])
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    async def enrich(item):
+        if item.url.endswith("failure"):
+            raise RuntimeError("broken extractor")
+        return EnrichedContent(item.content, len(item.content), len(item.content))
+    monkeypatch.setattr("src.ai4s_analyzer.enrich_item_content", enrich)
+    monkeypatch.setattr("src.ai4s_analyzer.complete_json",
+                        AsyncMock(return_value=(_valid_response(), 0.001)))
+    metrics = await run_ai4s_analyze(storage, _config())
+    assert metrics["analyzed"] == 1 and metrics["errors"] == 1
+    storage.close()
 
 
 @pytest.mark.asyncio

@@ -105,3 +105,19 @@ async def test_fetch_github_limits_topic_metadata(httpx_mock):
 
     assert ", ".join(topics[:8]) in items[0].content
     assert topics[8] not in items[0].content
+
+
+@pytest.mark.asyncio
+@freeze_time("2026-05-15 12:00:00")
+async def test_fetch_github_adds_required_topics_to_search(httpx_mock):
+    httpx_mock.add_response(
+        url=re.compile(r"https://api\.github\.com/search/repositories.*"),
+        json={"items": []},
+    )
+    await fetch_github({
+        "name": "materials", "type": "github", "topic": "materials-informatics",
+        "required_topics": ["machine-learning"], "min_stars": 20,
+    }, window_hours=72)
+    query = httpx_mock.get_request().url.params["q"]
+    assert "topic:materials-informatics" in query
+    assert "topic:machine-learning" in query

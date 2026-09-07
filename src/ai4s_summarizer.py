@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 
 from src.config import Config
 from src.content_enrichment import enrich_item_content
@@ -14,10 +14,13 @@ from src.storage import Storage
 
 logger = logging.getLogger(__name__)
 
-_SUMMARY_CONTENT_CHARS = 9000
-_SUMMARY_PREFIX_CHARS = 4200
+_SUMMARY_CONTENT_CHARS = 40_000
+_SUMMARY_PREFIX_CHARS = 5_000
 _CONTENT_CHUNK_CHARS = 900
-_RESULT_MARKERS = (
+_EVIDENCE_MARKERS = (
+    "method",
+    "architecture",
+    "training",
     "result",
     "performance",
     "benchmark",
@@ -37,6 +40,11 @@ _RESULT_MARKERS = (
     "准确率",
     "提升",
     "对比",
+    "方法",
+    "模型",
+    "训练",
+    "消融",
+    "局限",
 )
 _FACTUAL_SUMMARY_FIELDS = (
     "scientific_problem",
@@ -49,8 +57,8 @@ _FACTUAL_SUMMARY_FIELDS = (
 _SUMMARY_FIELDS = _FACTUAL_SUMMARY_FIELDS + ("assessment",)
 # Hard limits allow modest variance beyond the prompt's concise targets.
 # Count Chinese characters, allowing method names and measured values in English.
-_SUMMARY_CHAR_LIMITS = {"scientific_problem": 100, "ai_method": 140, "main_result": 140,
-                        "innovation": 100, "scientific_significance": 100, "assessment": 100}
+_SUMMARY_CHAR_LIMITS = {"scientific_problem": 150, "ai_method": 220, "main_result": 260,
+                        "innovation": 150, "scientific_significance": 150, "assessment": 120}
 _UNSUPPORTED_INFERENCE_MARKERS = ("可推断", "推测")
 
 
@@ -80,7 +88,7 @@ def select_summary_content(content: str) -> str:
         used_chars += len(chunk) + 2
 
     for index, chunk in enumerate(chunks):
-        if index in selected or not any(marker in chunk.casefold() for marker in _RESULT_MARKERS):
+        if index in selected or not any(marker in chunk.casefold() for marker in _EVIDENCE_MARKERS):
             continue
         if used_chars + len(chunk) + 2 > _SUMMARY_CONTENT_CHARS:
             continue
@@ -134,7 +142,7 @@ async def summarize_analysis(
     data, cost = await complete_json(
         model=cfg.models.summarizer,
         prompt=_render_summary_prompt(analysis, cfg.keywords, enriched.text),
-        max_tokens=1500,
+        max_tokens=2200,
     )
     missing = [field for field in _SUMMARY_FIELDS if field not in data]
     if missing:
@@ -213,51 +221,49 @@ async def run_ai4s_summarize(
     candidates = storage.get_unsummarized_ai4s_analyses(
         min_score=cfg.score_threshold,
     )
-    # Sparse summaries cannot fill Daily. Read further new candidates, bounded
-    # to five reading slots per requested recommendation; explicit limits remain
-    # hard paid-call caps. Never retry a candidate within this run.
-    batch_limit = cfg.top_n * 5 if limit is None else min(cfg.top_n, limit)
-    # Give each analyzed domain a reading opportunity before filling its next
-    # slot. Score/recency order within a domain and the paid batch cap stay intact.
+    batch_limit = min(42, len(candidates)) if limit is None else min(42, limit, len(candidates))
+    # Reserve up to five reading slots per domain, then fill the remaining paid
+    # budget by global score/recency. This is an input budget, not a recommendation quota.
     domains = defaultdict(deque)
     for candidate in candidates:
         domains[candidate.analyzer.primary_category].append(candidate)
     selected = []
-    while len(selected) < batch_limit and any(domains.values()):
-        for domain in domains.values():
-            if domain and len(selected) < batch_limit:
-                selected.append(domain.popleft())
+    for category in ("chemistry", "materials", "physics", "earth", "biology", "medicine", "general"):
+        selected.extend(list(domains[category])[:5])
+    selected_urls = {analysis.item.url for analysis in selected}
+    selected.extend(candidate for candidate in candidates if candidate.item.url not in selected_urls)
+    selected = selected[:batch_limit]
+    selected_distribution = Counter(a.analyzer.primary_category for a in selected)
     logger.info(
         "AI4S summary candidates=%d selected=%d",
         len(candidates),
         len(selected),
     )
+    logger.info("AI4S summary input distribution: %s", dict(selected_distribution))
 
     metrics: dict[str, int | float] = {
         "candidates": len(candidates),
-        "selected": 0,
+        "selected": len(selected),
         "summarized": 0,
         "qualified": 0,
         "errors": 0,
         "cost_usd": 0.0,
     }
-    while selected and metrics["qualified"] < cfg.top_n:
-        needed = cfg.top_n - int(metrics["qualified"])
-        batch, selected = selected[:needed], selected[needed:]
-        metrics["selected"] += len(batch)
-        results = await asyncio.gather(
-            *(_summarize_one(analysis, cfg) for analysis in batch)
-        )
-        for analysis, summary, error in results:
-            if error is not None or summary is None:
-                metrics["errors"] += 1
-                metrics["cost_usd"] += float(getattr(error, "cost_usd", 0.0))
-                continue
-            storage.save_ai4s_summary(analysis.item.url, summary)
-            analysis.summary = summary
-            metrics["summarized"] += 1
-            metrics["qualified"] += int(has_sufficient_information(analysis))
-            metrics["cost_usd"] += summary.cost_usd
+    semaphore = asyncio.Semaphore(6)
+    async def limited(analysis: AI4SAnalysis):
+        async with semaphore:
+            return await _summarize_one(analysis, cfg)
+    results = await asyncio.gather(*(limited(analysis) for analysis in selected))
+    for analysis, summary, error in results:
+        if error is not None or summary is None:
+            metrics["errors"] += 1
+            metrics["cost_usd"] += float(getattr(error, "cost_usd", 0.0))
+            continue
+        storage.save_ai4s_summary(analysis.item.url, summary)
+        analysis.summary = summary
+        metrics["summarized"] += 1
+        metrics["qualified"] += int(has_sufficient_information(analysis))
+        metrics["cost_usd"] += summary.cost_usd
 
     logger.info(
         "AI4S summarize done: candidates=%d selected=%d summarized=%d "

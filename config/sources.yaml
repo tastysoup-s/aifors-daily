@@ -5,6 +5,7 @@ sources:
     group: papers
     provider: arXiv
     categories: [cs.AI, cs.LG, stat.ML]
+    terms: [AI for science, scientific machine learning, molecular, protein, materials discovery, chemistry, physics, climate, weather, geoscience]
     max_results: 15
 
   - name: arxiv-biology-medicine
@@ -12,7 +13,7 @@ sources:
     group: papers
     provider: arXiv
     categories: [q-bio.BM, q-bio.GN, q-bio.QM]
-    terms: &ai_terms [machine learning, deep learning, neural network, foundation model, transformer, graph neural network, generative model, diffusion model, surrogate model, reinforcement learning, neural operator]
+    terms: &ai_terms [machine learning, deep learning, neural network, foundation model, graph neural network, generative model, diffusion model, surrogate model, scientific machine learning, physics-informed, machine-learned potential, neural potential, AI-driven discovery, inverse design, generative design]
     max_results: 8
 
   - name: arxiv-chemistry
@@ -92,13 +93,14 @@ sources:
     provider: GitHub
     max_results: 15
     topic: materials-informatics
+    required_topics: [machine-learning]
     min_stars: 20
 
   - name: github-chemistry
     type: github
     group: code
     provider: GitHub
-    topic: cheminformatics
+    topic: molecular-machine-learning
     min_stars: 20
     max_results: 15
 
@@ -115,6 +117,7 @@ sources:
     group: code
     provider: GitHub
     topic: weather-forecasting
+    required_topics: [machine-learning]
     min_stars: 20
     max_results: 15
 

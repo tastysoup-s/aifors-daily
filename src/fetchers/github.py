@@ -18,13 +18,15 @@ _API_URL = "https://api.github.com/search/repositories"
 async def fetch_github(source: dict[str, Any], window_hours: int) -> list[Item]:
     name = source["name"]
     topic = source["topic"]
+    required_topics = source.get("required_topics", [])
     min_stars = int(source.get("min_stars", 10))
     max_results = min(100, max(1, int(source.get("max_results", 30))))
 
     # Approximate "trending": repos pushed within window, sorted by stars.
     cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     pushed_filter = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
-    query = f"topic:{topic} stars:>={min_stars} pushed:>={pushed_filter}"
+    topic_query = " ".join(f"topic:{value}" for value in (topic, *required_topics))
+    query = f"{topic_query} stars:>={min_stars} pushed:>={pushed_filter}"
 
     headers = {
         "Accept": "application/vnd.github+json",

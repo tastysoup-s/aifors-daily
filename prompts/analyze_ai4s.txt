@@ -46,7 +46,10 @@ tags 使用 0-4 个简短英文技术/主题标签，不要机械重复领域 ID
 - 来源：{source}
 - 日期：{date}
 - 标题：{title}
-- 内容：{content}
+- 摘要：{abstract}
+- 从官方原文按章节选择的证据（可能因获取失败而缺失）：{enriched_text}
+
+判断必须以输入证据为准。正文比摘要更丰富时，应结合方法、实验、结果与限制判断；若正文抓取失败，不得把缺失本身当成负面证据。传统计算、普通统计、仅软件工具或仅数据集仍不得仅因出现科学术语而判为 AI4S。
 
 只输出严格 JSON，不要输出 Markdown、解释或额外字段：
 {{"is_ai4s": true, "primary_category": "biology", "secondary_categories": ["medicine"], "content_type": "paper", "score": 8, "tags": ["protein-design", "diffusion"]}}

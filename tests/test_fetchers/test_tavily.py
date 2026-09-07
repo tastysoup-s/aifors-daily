@@ -9,6 +9,7 @@ from freezegun import freeze_time
 from src.fetchers import fetch_all
 from src.fetchers.tavily import fetch_tavily
 from src.dedup import dedup_by_url
+from src.content_enrichment import EnrichedContent
 from src.source_info import source_info
 from src.storage import Storage
 
@@ -124,6 +125,12 @@ async def test_tavily_hint_cannot_override_analyzer(monkeypatch, source, httpx_m
     complete = AsyncMock(return_value=({"is_ai4s": True, "primary_category": "chemistry",
         "secondary_categories": [], "content_type": "paper", "score": 8, "tags": []}, 0))
     monkeypatch.setattr("src.ai4s_analyzer.complete_json", complete)
+    monkeypatch.setattr(
+        "src.ai4s_analyzer.enrich_item_content",
+        AsyncMock(return_value=EnrichedContent(
+            item.content, len(item.content), len(item.content)
+        )),
+    )
     analysis = await analyze_item(item, _config())
     assert analysis.primary_category == "chemistry"
     assert item.raw["retrieval_category_hint"] == "physics"

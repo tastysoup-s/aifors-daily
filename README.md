@@ -151,10 +151,10 @@ MIT. 详见 [LICENSE](./LICENSE)。
 
 - Fetch 广泛发现候选；Analyzer 独立判断 AI4S、科学领域与价值，检索 hint 不决定分类。
 - arXiv 科学领域源支持可选 `terms`：`(categories OR ...) AND (all:"method" OR ...)`；旧配置不变。
-- Daily 保持 AI4S、评分和 information sufficiency 门槛，再按 `ceil(top_n * 0.30)` 软领域上限选择；候选不足按原排名回填，同质量保留来源多样性。
-- 合格池允许时，Daily 至少保留 30% 位置给非 Biology/Medicine，且覆盖至少两个非生物医学领域；不足时才回填。
-- 摘要按领域轮流读取高分新候选，直到得到 `top_n` 条信息充分摘要或候选耗尽。单次最多读取 `5 * top_n` 条（默认 50），不重试同一候选；显式 `--limit` 仍为调用硬上限。已有摘要不重做。
-- 新摘要事实字段约 70/100 字，研判 40–90 中文字、一个关键判断。超长输出报单条错误，不截断事实或自动增加 LLM 调用。旧摘要及已保存报告不自动重写。
+- Daily 默认 12 条并保持 AI4S、评分和 information sufficiency 门槛。合格池允许时单领域最多 3 条、至少覆盖 5 个领域，Biology/Medicine 合计最多 5 条，非生物医学至少 7 条且 Chemistry/Materials/Physics/Earth 至少覆盖 3 类；候选不足才按质量回填。
+- arXiv 优先读取官方 HTML，从 Abstract、Methods、Results、Conclusion、Introduction、Discussion/Limitations 构建至多 40k 字符的证据包；RSS 使用相同正文清洗，GitHub 优先 README 的方法和 benchmark，正文获取失败逐条回退原摘要。
+- Analyzer 同时读取摘要和至多 8k 字符的章节证据。摘要阶段先为每领域预留最多 5 个高分候选，再按全局质量补齐，每次最多 42 次调用；显式 `--limit` 仍是更小的硬上限，已有摘要不重做。
+- 新摘要基于原文证据扩展问题、方法、结果、创新和科学意义，研判目标 60–100 中文字。信息少时允许更短；超长或稀疏输出按单条隔离，不截断事实或降低门槛。
 - Daily 无图片时正文全宽，有图仅 112×96 缩略图；Weekly 以本周判断、领域走向、下一阶段观察为主，最后列 6 项证据。
 - Weekly 保持周三/周日 UTC cadence，每次观察 `report_date - 6 days` 到当日；候选按发表时间，过滤信息稀疏项，综合输入最多 30 项，尽量覆盖六领域。旧报告保留原窗口与原综合文本。
 

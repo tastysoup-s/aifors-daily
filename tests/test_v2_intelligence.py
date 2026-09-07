@@ -60,6 +60,33 @@ def test_group_reservation_backfills_when_only_two_other_items_qualify():
     assert all(has_sufficient_information(a) for a in selected)
 
 
+def test_daily_twelve_enforces_multidomain_targets_when_pool_allows():
+    counts = {"biology": 10, "medicine": 6, "chemistry": 4, "materials": 4,
+              "physics": 4, "earth": 4, "general": 2}
+    pool = [_analysis(f"https://{category}-{index}", category=category,
+                      score=10 if category in {"biology", "medicine"} else 7)
+            for category, count in counts.items() for index in range(count)]
+    selected = select_daily_candidates(pool, 12)
+    distribution = Counter(a.analyzer.primary_category for a in selected)
+    assert len(selected) == 12
+    assert max(distribution.values()) <= 3
+    assert distribution["biology"] + distribution["medicine"] <= 5
+    assert sum(n for c, n in distribution.items() if c not in {"biology", "medicine"}) >= 7
+    assert len(distribution) >= 5
+    assert len(set(distribution) & {"chemistry", "materials", "physics", "earth"}) >= 3
+
+
+def test_daily_twelve_never_uses_sparse_candidate_for_diversity():
+    pool = [_analysis(f"https://bio-{i}", score=10) for i in range(12)]
+    pool += [_analysis(f"https://{c}-{i}", category=c, score=7)
+             for c in ("chemistry", "materials", "physics") for i in range(2)]
+    sparse = _analysis("https://sparse-earth", category="earth", score=10)
+    sparse.summary = replace(sparse.summary, ai_method="信息不足")
+    selected = select_daily_candidates([sparse, *pool], 12)
+    assert len(selected) == 12
+    assert sparse not in selected
+
+
 @pytest.mark.parametrize("limit,expected_cap", [(5, 2), (10, 3), (20, 6)])
 def test_soft_cap_scales_with_limit(limit, expected_cap):
     pool = [_analysis(f"https://bio-{i}", score=10) for i in range(25)]
@@ -179,7 +206,7 @@ def test_synthesis_preserves_research_evidence_when_ecosystem_scores_higher():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("field,limit", [("scientific_problem", 100), ("ai_method", 140), ("main_result", 140), ("innovation", 100), ("scientific_significance", 100), ("assessment", 100)])
+@pytest.mark.parametrize("field,limit", [("scientific_problem", 150), ("ai_method", 220), ("main_result", 260), ("innovation", 150), ("scientific_significance", 150), ("assessment", 120)])
 async def test_new_summary_rejects_overlong_fields_without_retry(monkeypatch, field, limit):
     complete = AsyncMock(return_value=(_summary_response(**{field: "测" * (limit + 1)}), 0))
     monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
@@ -189,7 +216,7 @@ async def test_new_summary_rejects_overlong_fields_without_retry(monkeypatch, fi
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("field,length", [("scientific_problem", 73), ("main_result", 105), ("assessment", 100)])
+@pytest.mark.parametrize("field,length", [("scientific_problem", 120), ("main_result", 220), ("assessment", 100)])
 async def test_summary_accepts_modest_variance_without_truncation(monkeypatch, field, length):
     value = "测" * length
     complete = AsyncMock(return_value=(_summary_response(**{field: value}), 0.002))

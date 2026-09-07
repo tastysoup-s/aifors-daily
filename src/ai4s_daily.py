@@ -48,10 +48,25 @@ def generate_daily_report(
     logger.info("Daily qualified categories: %s", dict(Counter(a.analyzer.primary_category for a in qualified)))
     existing = storage.get_report_by_period("daily", period_start, period_end)
     if existing is not None:
-        # Qualification metrics describe current candidates, not a rewrite of
-        # the already persisted selection (which may predate this rule).
+        # A configured edition-size change may refresh membership in place while
+        # preserving the report row, timestamps and all historical source data.
+        selected = select_daily_candidates(qualified, cfg.top_n)
+        previous = [(i.analysis.item.url, i.category) for i in existing.items]
+        current = [(a.item.url, a.analyzer.primary_category) for a in selected]
+        if len(selected) > len(existing.items) and current != previous:
+            conn = storage._conn_or_die()
+            with conn:
+                conn.execute("DELETE FROM report_items WHERE report_id=?", (existing.id,))
+                conn.executemany(
+                    "INSERT INTO report_items (report_id,url,rank,category) VALUES (?,?,?,?)",
+                    [(existing.id, a.item.url, rank, a.analyzer.primary_category)
+                     for rank, a in enumerate(selected, 1)],
+                )
+            existing = storage.get_report_by_period("daily", period_start, period_end)
+            assert existing is not None
+            logger.info("existing Daily membership refreshed for top_n=%d", cfg.top_n)
         result = _metrics(existing, len(candidates), len(qualified), created=False)
-        logger.info("existing Daily report reused; information filter not applied")
+        logger.info("existing Daily report reused")
         _log_source_diversity(existing)
         return result
 
@@ -93,11 +108,18 @@ def select_daily_candidates(
          and insufficient_information_reason(a) is None],
         key=recommendation_sort_key, reverse=True,
     )
-    cap = ceil(limit * 0.30)
+    cap = 3 if limit == 12 else ceil(limit * 0.30)
     non_biomedical = [a for a in candidates
                       if a.analyzer.primary_category not in {"biology", "medicine"}]
-    reserve = min(cap, len(non_biomedical))
-    domain_target = min(2, reserve, len({a.analyzer.primary_category for a in non_biomedical}))
+    reserve = min(7 if limit == 12 else cap, len(non_biomedical))
+    available_categories = {a.analyzer.primary_category for a in candidates}
+    category_target = min(5, len(available_categories), limit) if limit == 12 else 0
+    core_domains = {"chemistry", "materials", "physics", "earth"}
+    available_core = available_categories & core_domains
+    core_target = min(3 if limit == 12 else len(available_core), len(available_core))
+    nonbio_domain_target = (0 if limit == 12 else
+                            min(2, reserve, len({a.analyzer.primary_category
+                                                for a in non_biomedical})))
     selected: list[AI4SAnalysis] = []
     categories: Counter[str] = Counter()
     families: Counter[str] = Counter()
@@ -111,6 +133,8 @@ def select_daily_candidates(
                                     if c not in {"biology", "medicine"})
                 non_bio_domains = {c for c, n in categories.items()
                                    if n and c not in {"biology", "medicine"}}
+                selected_domains = {c for c, n in categories.items() if n}
+                selected_core = selected_domains & core_domains
                 slots = limit - len(selected)
                 eligible = [a for a in tier if not enforce_cap
                             or categories[a.analyzer.primary_category] < cap]
@@ -119,10 +143,17 @@ def select_daily_candidates(
                 if slots <= reserve - non_bio_count:
                     eligible = [a for a in eligible
                                 if a.analyzer.primary_category not in {"biology", "medicine"}]
-                if slots <= domain_target - len(non_bio_domains):
+                if slots <= category_target - len(selected_domains):
+                    eligible = [a for a in eligible
+                                if a.analyzer.primary_category not in selected_domains]
+                if slots <= nonbio_domain_target - len(non_bio_domains):
                     eligible = [a for a in eligible
                                 if a.analyzer.primary_category not in {"biology", "medicine"}
                                 and a.analyzer.primary_category not in non_bio_domains]
+                if slots <= core_target - len(selected_core):
+                    eligible = [a for a in eligible
+                                if a.analyzer.primary_category in core_domains
+                                and a.analyzer.primary_category not in selected_core]
                 if not eligible:
                     deferred.extend(tier)
                     break

@@ -98,7 +98,8 @@ def _store_analysis(
 async def test_summary_batch_reads_other_domains_without_exceeding_budget(monkeypatch, tmp_path):
     storage = Storage(tmp_path / "domains.db")
     storage.init()
-    for category, count in {"biology": 10, "medicine": 6, "materials": 4, "physics": 3, "chemistry": 2}.items():
+    for category, count in {"biology": 20, "medicine": 10, "chemistry": 10,
+                            "materials": 10, "physics": 10, "earth": 10}.items():
         for i in range(count):
             url = f"https://{category}-{i}"
             storage.record_items([_item(url)])
@@ -110,14 +111,15 @@ async def test_summary_batch_reads_other_domains_without_exceeding_budget(monkey
     monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
     metrics = await run_ai4s_summarize(storage, _config())
     summarized = storage.get_recent_summarized_ai4s_analyses(7)
-    assert Counter(a.analyzer.primary_category for a in summarized) == {
-        "biology": 2, "medicine": 2, "materials": 2, "physics": 2, "chemistry": 2}
-    assert metrics["selected"] == complete.await_count == 10
+    distribution = Counter(a.analyzer.primary_category for a in summarized)
+    assert all(distribution[category] >= 5 for category in
+               ("biology", "medicine", "chemistry", "materials", "physics", "earth"))
+    assert metrics["selected"] == complete.await_count == 42
     storage.close()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("explicit_limit,expected_calls,qualified", [(None, 3, 1), (1, 1, 0)])
+@pytest.mark.parametrize("explicit_limit,expected_calls,qualified", [(None, 8, 6), (1, 1, 0)])
 async def test_sparse_readings_advance_to_new_candidates_with_a_hard_budget(
     monkeypatch, tmp_path, explicit_limit, expected_calls, qualified,
 ):
@@ -139,16 +141,16 @@ async def test_sparse_readings_advance_to_new_candidates_with_a_hard_budget(
 
 
 @pytest.mark.asyncio
-async def test_default_reading_budget_stops_after_five_slots_per_recommendation(monkeypatch, tmp_path):
+async def test_default_reading_budget_has_forty_two_call_hard_cap(monkeypatch, tmp_path):
     storage = Storage(tmp_path / "bounded.db")
     storage.init()
-    for i in range(8):
+    for i in range(50):
         _store_analysis(storage, f"https://item-{i}")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     complete = AsyncMock(return_value=(_summary_response(scientific_significance="信息不足"), 0.002))
     monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
-    metrics = await run_ai4s_summarize(storage, _config(top_n=1))
-    assert metrics["selected"] == complete.await_count == 5
+    metrics = await run_ai4s_summarize(storage, _config(top_n=12))
+    assert metrics["selected"] == complete.await_count == 42
     assert metrics["qualified"] == 0
     storage.close()
 
@@ -157,7 +159,7 @@ async def test_default_reading_budget_stops_after_five_slots_per_recommendation(
 async def test_summarize_analysis_returns_valid_summary(monkeypatch):
     complete = AsyncMock(return_value=(_summary_response(), 0.002))
     monkeypatch.setattr("src.ai4s_summarizer.complete_json", complete)
-    analysis = _analysis("x" * 10_000 + "SHOULD_NOT_APPEAR")
+    analysis = _analysis("x" * 50_000 + "SHOULD_NOT_APPEAR")
 
     summary = await summarize_analysis(analysis, _config())
 
@@ -171,7 +173,7 @@ async def test_summarize_analysis_returns_valid_summary(monkeypatch):
     assert "biology" in prompt
     assert "protein-design" in prompt
     assert "不得自行点名输入中没有出现" in prompt
-    assert "必须控制在 40～90" in prompt
+    assert "目标 60～100" in prompt
     assert analysis.item.title in prompt
     assert "SHOULD_NOT_APPEAR" not in prompt
 
@@ -185,7 +187,7 @@ def test_summary_content_keeps_result_evidence_beyond_long_background():
 
     selected = select_summary_content(content)
 
-    assert len(selected) <= 9000
+    assert len(selected) <= 40_000
     assert "150 systems reached 73.3% accuracy" in selected
 
 
@@ -419,7 +421,7 @@ async def test_overlong_assessment_isolated_and_paid_failure_counted(monkeypatch
 
     async def complete(**kwargs):
         if "https://too-long" in kwargs["prompt"]:
-            return _summary_response(assessment="证" * 101), 0.003
+            return _summary_response(assessment="证" * 121), 0.003
         return _summary_response(), 0.002
 
     request = AsyncMock(side_effect=complete)

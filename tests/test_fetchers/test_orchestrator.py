@@ -71,3 +71,18 @@ async def test_fetch_all_skips_unknown_source_type(monkeypatch, caplog):
     items = await fetch_all(sources, window_hours=36)
     assert items == []
     assert any("unknown source type" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_spaces_multiple_arxiv_requests(monkeypatch):
+    arxiv = AsyncMock(return_value=[])
+    sleep = AsyncMock()
+    monkeypatch.setattr("src.fetchers.fetch_arxiv", arxiv)
+    monkeypatch.setattr("src.fetchers.asyncio.sleep", sleep)
+    await fetch_all([
+        {"name": "one", "type": "arxiv"},
+        {"name": "two", "type": "arxiv"},
+        {"name": "three", "type": "arxiv"},
+    ], 168)
+    assert arxiv.await_count == 3
+    assert sleep.await_count == 2
